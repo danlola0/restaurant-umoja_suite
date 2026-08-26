@@ -1,0 +1,6 @@
+{
+  "name": "Restaurant Umoja - Gestion Intégrale",
+  "description": "Plateforme complète de gestion pour le Restaurant Umoja : Menu client, Cuisine KDS, Caisse & Facturation, Pointage du personnel avec photo, Dépenses et Rapports financiers.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}

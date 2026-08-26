@@ -1,0 +1,9 @@
+node_modules/
+build/
+dist/
+coverage/
+.DS_Store
+*.log
+GitHubDesktopSetup-x64.exe
+.env*
+!.env.example
