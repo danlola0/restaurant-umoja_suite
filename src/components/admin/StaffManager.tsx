@@ -416,7 +416,7 @@ export const StaffManager: React.FC = () => {
                   />
                 </div>
                 <div>
-                  <label className="text-xs font-bold text-stone-300 block mb-1">Salaire Mensuel (FC)</label>
+                  <label className="text-xs font-bold text-stone-300 block mb-1">Salaire Mensuel (CNY)</label>
                   <input
                     type="number"
                     step={10000}

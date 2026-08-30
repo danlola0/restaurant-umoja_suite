@@ -40,7 +40,7 @@ export const ReportsManager: React.FC = () => {
     let filename = `rapport_${dataType}_${new Date().toISOString().split('T')[0]}.csv`;
 
     if (dataType === 'invoices') {
-      headers = ['Numero', 'Date', 'Table', 'Caissier/Serveur', 'Total (FC)', 'Mode Paiement', 'Statut'];
+      headers = ['Numero', 'Date', 'Table', 'Caissier/Serveur', 'Total (CNY)', 'Mode Paiement', 'Statut'];
       rows = invoices.map(inv => [
         inv.invoiceNumber,
         inv.createdAt,
@@ -51,7 +51,7 @@ export const ReportsManager: React.FC = () => {
         inv.status
       ]);
     } else if (dataType === 'expenses') {
-      headers = ['ID', 'Date', 'Categorie', 'Description', 'Fournisseur', 'Montant (FC)', 'Mode', 'Enregistre Par'];
+      headers = ['ID', 'Date', 'Categorie', 'Description', 'Fournisseur', 'Montant (CNY)', 'Mode', 'Enregistre Par'];
       rows = expenses.map(exp => [
         exp.id,
         exp.date,

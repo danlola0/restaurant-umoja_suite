@@ -390,7 +390,7 @@ export const MenuManager: React.FC = () => {
 
               <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
                 <div>
-                  <label className="text-xs font-bold text-stone-300 block mb-1">Prix Unitaire (FC) *</label>
+                  <label className="text-xs font-bold text-stone-300 block mb-1">Prix Unitaire (CNY) *</label>
                   <input
                     type="number"
                     required

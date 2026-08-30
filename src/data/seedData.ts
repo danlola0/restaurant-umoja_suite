@@ -20,7 +20,7 @@ export const initialRestaurantInfo: RestaurantInfo = {
   address: "Avenue de la Paix N° 45, Gombe, Kinshasa - RDC",
   phone: "+243 81 234 5678 / +243 89 876 5432",
   email: "contact@restaurant-umoja.cd",
-  currency: "FC",
+  currency: "CNY",
   nifRccm: "CD/KIN/RCCM/24-B-01452 - NIF: A1204982Z",
   tableCount: 12,
 };

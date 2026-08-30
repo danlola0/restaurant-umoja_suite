@@ -425,21 +425,25 @@ export const RestaurantProvider: React.FC<{ children: React.ReactNode }> = ({ ch
   }, []);
 
   useEffect(() => {
-    if (!authEmail || !['ADMINISTRATEUR', 'RESPONSABLE'].includes(currentRole) || productsLoadedFromSupabase.current) return;
+    if (productsLoadedFromSupabase.current) return;
     productsLoadedFromSupabase.current = true;
 
     const loadProducts = async () => {
-      const { error: categoriesError } = await supabase.from('categories').upsert(
-        categories.map(category => ({
-          id: category.id,
-          name: category.name,
-          description: category.description || null,
-          icon_name: category.iconName,
-          display_order: category.order,
-          active: category.active,
-        })),
-        { onConflict: 'id' }
-      );
+      let categoriesError: { message: string } | null = null;
+      if (authEmail && ['ADMINISTRATEUR', 'RESPONSABLE'].includes(currentRole)) {
+        const result = await supabase.from('categories').upsert(
+          categories.map(category => ({
+            id: category.id,
+            name: category.name,
+            description: category.description || null,
+            icon_name: category.iconName,
+            display_order: category.order,
+            active: category.active,
+          })),
+          { onConflict: 'id' }
+        );
+        categoriesError = result.error;
+      }
       const { data, error } = await supabase.from('products').select('*').order('display_order');
       if (error) {
         productsLoadedFromSupabase.current = false;
@@ -447,7 +451,15 @@ export const RestaurantProvider: React.FC<{ children: React.ReactNode }> = ({ ch
         return;
       }
       if (categoriesError) addNotification(`Catégories non synchronisées : ${categoriesError.message}`, 'warning');
-      if (data && data.length > 0) setProducts((data as SupabaseProductRow[]).map(productFromSupabase));
+      if (data && data.length > 0) {
+        setProducts((data as SupabaseProductRow[]).map(productFromSupabase));
+      } else if (authEmail && ['ADMINISTRATEUR', 'RESPONSABLE'].includes(currentRole)) {
+        const { error: seedError } = await supabase.from('products').upsert(products.map(productToSupabase), { onConflict: 'id' });
+        if (seedError) {
+          productsLoadedFromSupabase.current = false;
+          addNotification(`Produits initiaux non synchronisés : ${seedError.message}`, 'warning');
+        }
+      }
     };
 
     void loadProducts();
@@ -543,6 +555,53 @@ export const RestaurantProvider: React.FC<{ children: React.ReactNode }> = ({ ch
     // Update orders list
     setOrders(prev => [newOrder, ...prev]);
 
+    // Persist the public client order in Supabase without exposing internal data.
+    void (async () => {
+      const sessionPayload = {
+        id: session!.id,
+        table_id: table.id,
+        opened_by: null,
+        opened_at: session!.openedAt,
+        status: 'ACTIVE',
+        customer_count: session!.customerCount,
+        total_amount: totalAmount,
+        paid_amount: 0,
+      };
+      const { error: sessionError } = await supabase.from('table_sessions').upsert(sessionPayload, { onConflict: 'id' });
+      if (sessionError) {
+        addNotification(`Commande non synchronisée avec Supabase : ${sessionError.message}`, 'error');
+        return;
+      }
+      const { error: orderError } = await supabase.from('orders').insert({
+        id: newOrder.id,
+        order_number: orderNumber,
+        table_session_id: session!.id,
+        table_id: table.id,
+        created_by: null,
+        client_name: clientName || null,
+        status: 'NOUVELLE',
+        special_instructions: specialInstructions || null,
+        order_type: 'SUR_PLACE',
+        total_amount: totalAmount,
+        created_at: newOrder.createdAt,
+      });
+      if (orderError) {
+        addNotification(`Commande non synchronisée avec Supabase : ${orderError.message}`, 'error');
+        return;
+      }
+      const { error: itemsError } = await supabase.from('order_items').insert(orderItems.map(item => ({
+        id: item.id,
+        order_id: newOrder.id,
+        product_id: item.productId,
+        product_name: item.productName,
+        unit_price: item.unitPrice,
+        quantity: item.quantity,
+        notes: item.notes || null,
+        subtotal: item.subtotal,
+      })));
+      if (itemsError) addNotification(`Articles non synchronisés avec Supabase : ${itemsError.message}`, 'error');
+    })();
+
     // Update session orders & total
     setTableSessions(prev => prev.map(s => {
       if (s.id === sessionId) {
@@ -567,7 +626,7 @@ export const RestaurantProvider: React.FC<{ children: React.ReactNode }> = ({ ch
       return t;
     }));
 
-    logAudit('CREATION_COMMANDE', 'Order', newOrder.id, undefined, `${orderNumber} - ${totalAmount} FC`, `Commande passée pour ${table.code}`);
+    logAudit('CREATION_COMMANDE', 'Order', newOrder.id, undefined, `${orderNumber} - ${totalAmount} CNY`, `Commande passée pour ${table.code}`);
     addNotification(`Nouvelle commande ${orderNumber} (${table.code}) envoyée en cuisine !`, 'success');
     playNotificationSound('order');
 
@@ -723,7 +782,7 @@ export const RestaurantProvider: React.FC<{ children: React.ReactNode }> = ({ ch
     // Mark table as A_PAYER
     setTables(prev => prev.map(t => t.id === tableId ? { ...t, status: 'A_PAYER' } : t));
 
-    logAudit('GENERATION_FACTURE', 'Invoice', newInvoice.id, undefined, `${invoiceNumber} - Total: ${finalTotal} FC`, `Facture générée pour ${session.tableCode}`);
+    logAudit('GENERATION_FACTURE', 'Invoice', newInvoice.id, undefined, `${invoiceNumber} - Total: ${finalTotal} CNY`, `Facture générée pour ${session.tableCode}`);
     addNotification(`Facture ${invoiceNumber} (${session.tableCode}) générée avec succès !`, 'success');
 
     return newInvoice;

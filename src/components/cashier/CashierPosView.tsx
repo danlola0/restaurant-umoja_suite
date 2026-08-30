@@ -385,7 +385,7 @@ export const CashierPosView: React.FC = () => {
                     type="number"
                     value={discountInput || ''}
                     onChange={(e) => setDiscountInput(Number(e.target.value))}
-                    placeholder="Remise commerciale (FC)"
+                        placeholder="Remise commerciale (CNY)"
                     className="flex-1 bg-stone-950 border border-stone-700 rounded-xl px-3 py-1.5 text-xs text-stone-200 placeholder-stone-500 focus:outline-none focus:ring-1 focus:ring-amber-500"
                   />
                 </div>

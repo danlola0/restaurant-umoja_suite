@@ -236,7 +236,7 @@ export const CashRegisterManager: React.FC = () => {
             <form onSubmit={handleOpenRegister} className="p-5 space-y-4">
               <div>
                 <label className="text-xs font-bold text-stone-300 block mb-1">
-                  Fond de Caisse Initial (FC) *
+                  Fond de Caisse Initial (CNY) *
                 </label>
                 <input
                   type="number"
@@ -292,7 +292,7 @@ export const CashRegisterManager: React.FC = () => {
 
               <div>
                 <label className="text-xs font-bold text-stone-300 block mb-1">
-                  Montant Réel Compté Physiquement dans le tiroir-caisse (FC) *
+                  Montant Réel Compté Physiquement dans le tiroir-caisse (CNY) *
                 </label>
                 <input
                   type="number"
@@ -312,7 +312,7 @@ export const CashRegisterManager: React.FC = () => {
               }`}>
                 <span>Écart de Caisse constaté :</span>
                 <strong className="font-mono font-bold text-sm">
-                  {variance > 0 ? `+${formatFC(variance)} (Excédent)` : variance < 0 ? `${formatFC(variance)} (Déficit)` : '0 FC (Parfait)'}
+                  {variance > 0 ? `+${formatFC(variance)} (Excédent)` : variance < 0 ? `${formatFC(variance)} (Déficit)` : '¥0 CNY (Parfait)'}
                 </strong>
               </div>
 

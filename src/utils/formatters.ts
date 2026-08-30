@@ -14,11 +14,13 @@ export function handleImageError(e: React.SyntheticEvent<HTMLImageElement, Event
 
 export function formatFC(amount: number): string {
   if (isNaN(amount) || amount === null || amount === undefined) {
-    return '0 FC';
+    return '¥0 CNY';
   }
-  return new Intl.NumberFormat('fr-FR', {
+  return new Intl.NumberFormat('zh-CN', {
+    style: 'currency',
+    currency: 'CNY',
     maximumFractionDigits: 0,
-  }).format(amount) + ' FC';
+  }).format(amount);
 }
 
 export function formatDateTime(isoString?: string): string {

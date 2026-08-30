@@ -141,7 +141,7 @@ export const InvoiceModal: React.FC<InvoiceModalProps> = ({
             )}
             <div className="flex justify-between text-stone-400">
               <span>TVA (Incluse) :</span>
-              <span>0 FC</span>
+              <span>¥0 CNY</span>
             </div>
             <div className="flex justify-between text-sm font-black text-stone-100 pt-2 border-t border-stone-800">
               <span className="uppercase tracking-wider">TOTAL À PAYER :</span>

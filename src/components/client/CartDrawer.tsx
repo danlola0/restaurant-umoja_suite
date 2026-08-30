@@ -248,7 +248,7 @@ export const CartDrawer: React.FC<CartDrawerProps> = ({
                 </div>
                 <div className="flex justify-between text-stone-400">
                   <span>TVA & Service (Inclus)</span>
-                  <span className="font-mono text-stone-300">0 FC</span>
+                  <span className="font-mono text-stone-300">¥0 CNY</span>
                 </div>
                 <div className="flex justify-between text-base font-extrabold text-stone-100 pt-2 border-t border-stone-800">
                   <span>Total à payer</span>

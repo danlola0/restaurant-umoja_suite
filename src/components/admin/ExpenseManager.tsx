@@ -213,7 +213,7 @@ export const ExpenseManager: React.FC = () => {
                 </div>
 
                 <div>
-                  <label className="text-xs font-bold text-stone-300 block mb-1">Montant Décaissement (FC) *</label>
+                  <label className="text-xs font-bold text-stone-300 block mb-1">Montant Décaissement (CNY) *</label>
                   <input
                     type="number"
                     required

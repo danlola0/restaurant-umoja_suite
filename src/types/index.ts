@@ -35,8 +35,8 @@ export interface Employee {
   email?: string;
   role?: UserRole;
   poste: string;
-  salaire: number; // in FC
-  salaireBase?: number; // in FC (alias)
+  salaire: number; // in CNY
+  salaireBase?: number; // in CNY (alias)
   dateEmbauche: string;
   typeContrat: ContractType;
   statut: EmployeeStatus;
@@ -83,7 +83,7 @@ export interface Product {
   categoryId: string;
   name: string;
   description: string;
-  price: number; // in FC
+  price: number; // in CNY
   photo: string;
   available: boolean;
   isRecommended: boolean;
@@ -213,7 +213,7 @@ export interface Expense {
   date: string; // YYYY-MM-DD
   category: string;
   description: string;
-  amount: number; // in FC
+  amount: number; // in CNY
   paymentMethod: PaymentMethod;
   supplier?: string;
   reference?: string;
@@ -226,7 +226,7 @@ export interface CashRegisterSession {
   id: string;
   date: string; // YYYY-MM-DD
   openedAt: string;
-  openingBalance: number; // in FC
+  openingBalance: number; // in CNY
   openedBy: string;
   status: 'OPEN' | 'CLOSED';
   closedAt?: string;

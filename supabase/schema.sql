@@ -321,6 +321,9 @@ drop policy if exists sessions_owner_or_staff on public.table_sessions;
 drop policy if exists sessions_staff_write on public.table_sessions;
 drop policy if exists orders_owner_or_staff on public.orders;
 drop policy if exists orders_client_insert on public.orders;
+drop policy if exists orders_public_insert on public.orders;
+drop policy if exists sessions_public_insert on public.table_sessions;
+drop policy if exists order_items_public_insert on public.order_items;
 drop policy if exists orders_staff_update on public.orders;
 drop policy if exists order_items_visible_with_order on public.order_items;
 drop policy if exists order_items_staff_write on public.order_items;
@@ -359,6 +362,11 @@ create policy sessions_staff_write on public.table_sessions for all using (publi
 
 create policy orders_owner_or_staff on public.orders for select using (created_by = auth.uid() or public.has_role(array['ADMINISTRATEUR', 'RESPONSABLE', 'CAISSIER', 'SERVEUR', 'CUISINE']));
 create policy orders_client_insert on public.orders for insert with check (created_by = auth.uid());
+create policy orders_public_insert on public.orders for insert with check (created_by is null and status = 'NOUVELLE');
+create policy sessions_public_insert on public.table_sessions for insert with check (opened_by is null and status = 'ACTIVE');
+create policy order_items_public_insert on public.order_items for insert with check (
+  exists (select 1 from public.orders where orders.id = order_id and orders.created_by is null)
+);
 create policy orders_staff_update on public.orders for update using (public.has_role(array['ADMINISTRATEUR', 'RESPONSABLE', 'CUISINE', 'SERVEUR'])) with check (public.has_role(array['ADMINISTRATEUR', 'RESPONSABLE', 'CUISINE', 'SERVEUR']));
 create policy order_items_visible_with_order on public.order_items for select using (exists (select 1 from public.orders where orders.id = order_id and (orders.created_by = auth.uid() or public.has_role(array['ADMINISTRATEUR', 'RESPONSABLE', 'CAISSIER', 'SERVEUR', 'CUISINE']))));
 create policy order_items_staff_write on public.order_items for all using (public.has_role(array['ADMINISTRATEUR', 'RESPONSABLE', 'CUISINE', 'SERVEUR'])) with check (public.has_role(array['ADMINISTRATEUR', 'RESPONSABLE', 'CUISINE', 'SERVEUR']));

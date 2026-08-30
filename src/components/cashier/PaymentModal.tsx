@@ -39,7 +39,7 @@ export const PaymentModal: React.FC<PaymentModalProps> = ({
   const [cashTendered, setCashTendered] = useState<number>(invoice.remainingAmount);
 
   const paymentMethods: { id: PaymentMethod; label: string; icon: React.FC<{ className?: string }>; color: string }[] = [
-    { id: 'ESPECES', label: 'Espèces (FC)', icon: Banknote, color: 'text-emerald-400 border-emerald-500/40 bg-emerald-950/20' },
+    { id: 'ESPECES', label: 'Espèces (CNY)', icon: Banknote, color: 'text-emerald-400 border-emerald-500/40 bg-emerald-950/20' },
     { id: 'M_PESA', label: 'M-Pesa (Vodacom)', icon: Smartphone, color: 'text-rose-400 border-rose-500/40 bg-rose-950/20' },
     { id: 'AIRTEL_MONEY', label: 'Airtel Money', icon: Smartphone, color: 'text-red-400 border-red-500/40 bg-red-950/20' },
     { id: 'ORANGE_MONEY', label: 'Orange Money', icon: Smartphone, color: 'text-orange-400 border-orange-500/40 bg-orange-950/20' },
@@ -49,10 +49,10 @@ export const PaymentModal: React.FC<PaymentModalProps> = ({
 
   const quickDenominations = [
     { label: 'Exact', value: invoice.remainingAmount },
-    { label: '20 000 FC', value: 20000 },
-    { label: '50 000 FC', value: 50000 },
-    { label: '100 000 FC', value: 100000 },
-    { label: '200 000 FC', value: 200000 },
+    { label: '20 000 CNY', value: 20000 },
+    { label: '50 000 CNY', value: 50000 },
+    { label: '100 000 CNY', value: 100000 },
+    { label: '200 000 CNY', value: 200000 },
   ];
 
   const changeToReturn = selectedMethod === 'ESPECES' ? Math.max(0, cashTendered - invoice.remainingAmount) : 0;
@@ -177,7 +177,7 @@ export const PaymentModal: React.FC<PaymentModalProps> = ({
 
               <div className="grid grid-cols-2 gap-3 pt-1">
                 <div>
-                  <label className="text-[11px] text-stone-400 block mb-1">Montant perçu (FC)</label>
+                  <label className="text-[11px] text-stone-400 block mb-1">Montant perçu (CNY)</label>
                   <input
                     type="number"
                     value={cashTendered}
@@ -203,7 +203,7 @@ export const PaymentModal: React.FC<PaymentModalProps> = ({
           {/* Amount Paid input for partial payments or non-cash */}
           <div>
             <label className="text-xs font-bold text-stone-300 block mb-1">
-              Montant à imputer à la facture (FC)
+              Montant à imputer à la facture (CNY)
             </label>
             <input
               type="number"
