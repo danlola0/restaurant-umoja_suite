@@ -19,12 +19,19 @@ export const ClientOrderTracker: React.FC = () => {
   const { selectedTableId, tables, orders, tableSessions, addNotification, updateTableStatus } = useRestaurant();
 
   const currentTable = tables.find(t => t.id === selectedTableId) || tables[0];
-  const activeSession = tableSessions.find(s => s.tableId === currentTable.id && s.status === 'ACTIVE');
-  
-  // Get all orders belonging to this table's active session
-  const sessionOrders = activeSession 
-    ? orders.filter(o => activeSession.orderIds.includes(o.id))
-    : orders.filter(o => o.tableId === currentTable.id && o.status !== 'ANNULEE').slice(0, 4);
+
+  const activeSession =
+    tableSessions.find(s => s.tableId === currentTable.id && s.status === 'ACTIVE') ||
+    tableSessions.find(s => s.id === currentTable.currentSessionId && s.tableId === currentTable.id) ||
+    tableSessions.find(s => s.tableId === currentTable.id);
+
+  const tableOrders = orders.filter(o => o.tableId === currentTable.id && o.status !== 'ANNULEE');
+  const sessionOrderIds = activeSession?.orderIds?.length ? activeSession.orderIds : tableOrders.map(o => o.id);
+
+  // Get all orders belonging to the current table, with a resilient fallback on the active session.
+  const sessionOrders = activeSession
+    ? orders.filter(o => sessionOrderIds.includes(o.id) && o.status !== 'ANNULEE')
+    : tableOrders.slice(0, 4);
 
   const handleCallWaiter = () => {
     addNotification(`Un serveur a été notifié pour la ${currentTable.code} !`, 'info');

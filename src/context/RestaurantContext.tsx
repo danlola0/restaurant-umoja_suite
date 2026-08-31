@@ -192,6 +192,60 @@ const productToSupabase = (product: Product) => ({
   tags: product.tags || [],
 });
 
+const employeeFromSupabase = (row: any): Employee => ({
+  id: row.id,
+  auth_user_id: row.auth_user_id || undefined,
+  matricule: row.matricule,
+  nom: row.nom,
+  postnom: row.postnom || undefined,
+  prenom: row.prenom,
+  telephone: row.telephone || '',
+  email: row.email || undefined,
+  role: row.role || undefined,
+  poste: row.poste,
+  salaire: Number(row.salaire),
+  salaireBase: Number(row.salaire_base ?? row.salaire),
+  dateEmbauche: row.date_embauche,
+  typeContrat: row.type_contrat,
+  statut: row.statut,
+  photo: row.photo || '',
+  pin: row.pin,
+  scheduledShiftStart: row.scheduled_shift_start?.slice(0, 5) || '08:00',
+  scheduledShiftEnd: row.scheduled_shift_end?.slice(0, 5) || '17:00',
+});
+
+const employeeToSupabase = (employee: Employee) => ({
+  id: employee.id,
+  auth_user_id: employee.auth_user_id || null,
+  matricule: employee.matricule,
+  nom: employee.nom,
+  postnom: employee.postnom || null,
+  prenom: employee.prenom,
+  telephone: employee.telephone,
+  email: employee.email || null,
+  role: employee.role || null,
+  poste: employee.poste,
+  salaire: employee.salaire,
+  salaire_base: employee.salaireBase ?? employee.salaire,
+  date_embauche: employee.dateEmbauche,
+  type_contrat: employee.typeContrat,
+  statut: employee.statut,
+  photo: employee.photo,
+  pin: employee.pin,
+  scheduled_shift_start: employee.scheduledShiftStart,
+  scheduled_shift_end: employee.scheduledShiftEnd,
+});
+
+const tableFromSupabase = (row: any): RestaurantTable => ({
+  id: row.id,
+  code: row.code,
+  name: row.name,
+  zone: row.zone,
+  capacity: Number(row.capacity),
+  status: row.status,
+  waiterName: row.waiter_name || undefined,
+});
+
 function loadFromStorage<T>(key: string, fallback: T): T {
   try {
     const data = localStorage.getItem(STORAGE_KEY_PREFIX + key);
@@ -293,6 +347,7 @@ export const RestaurantProvider: React.FC<{ children: React.ReactNode }> = ({ ch
 
   const [notifications, setNotifications] = useState<NotificationItem[]>([]);
   const productsLoadedFromSupabase = useRef(false);
+  const adminDataLoaded = useRef(false);
 
   // Supabase Auth is the source of truth for access; localStorage is not used for identity.
   useEffect(() => {
@@ -465,6 +520,88 @@ export const RestaurantProvider: React.FC<{ children: React.ReactNode }> = ({ ch
     void loadProducts();
   }, [authEmail, currentRole, categories, addNotification]);
 
+  useEffect(() => {
+    if (adminDataLoaded.current || !authEmail || !['ADMINISTRATEUR', 'RESPONSABLE'].includes(currentRole)) return;
+    adminDataLoaded.current = true;
+
+    const loadAdminData = async () => {
+      const [
+        categoriesResult,
+        productsResult,
+        tablesResult,
+        sessionsResult,
+        ordersResult,
+        orderItemsResult,
+        employeesResult,
+        attendanceResult,
+        expensesResult,
+        expenseCategoriesResult,
+        invoicesResult,
+        paymentsResult,
+        auditResult,
+        cashSessionsResult,
+      ] = await Promise.all([
+        supabase.from('categories').select('*').order('display_order'),
+        supabase.from('products').select('*').order('display_order'),
+        supabase.from('restaurant_tables').select('*').order('code'),
+        supabase.from('table_sessions').select('*').order('opened_at', { ascending: false }),
+        supabase.from('orders').select('*').order('created_at', { ascending: false }),
+        supabase.from('order_items').select('*'),
+        supabase.from('employees').select('*').order('prenom'),
+        supabase.from('attendance_records').select('*').order('created_at', { ascending: false }),
+        supabase.from('expenses').select('*').order('created_at', { ascending: false }),
+        supabase.from('expense_categories').select('*').order('name'),
+        supabase.from('invoices').select('*').order('created_at', { ascending: false }),
+        supabase.from('payments').select('*').order('created_at', { ascending: false }),
+        supabase.from('audit_logs').select('*').order('created_at', { ascending: false }).limit(200),
+        supabase.from('cash_register_sessions').select('*').order('opened_at', { ascending: false }),
+      ]);
+
+      const results = [categoriesResult, productsResult, tablesResult, sessionsResult, ordersResult, orderItemsResult, employeesResult, attendanceResult, expensesResult, expenseCategoriesResult, invoicesResult, paymentsResult, auditResult, cashSessionsResult];
+      const failedResult = results.find(result => result.error);
+      if (failedResult?.error) {
+        adminDataLoaded.current = false;
+        addNotification(`Chargement administratif incomplet : ${failedResult.error.message}`, 'error');
+        return;
+      }
+
+      const loadedEmployees = (employeesResult.data || []).map(employeeFromSupabase);
+      const employeeById = new Map(loadedEmployees.map(employee => [employee.id, employee]));
+      const itemsByOrder = new Map<string, any[]>();
+      (orderItemsResult.data || []).forEach((item: any) => {
+        const items = itemsByOrder.get(item.order_id) || [];
+        items.push(item);
+        itemsByOrder.set(item.order_id, items);
+      });
+
+      if (categoriesResult.data) setCategories(categoriesResult.data.map((row: any) => ({ id: row.id, name: row.name, description: row.description || undefined, iconName: row.icon_name, order: row.display_order, active: row.active })));
+      if (productsResult.data) setProducts(productsResult.data.map(productFromSupabase));
+      if (tablesResult.data) setTables(tablesResult.data.map(tableFromSupabase));
+      if (sessionsResult.data) setTableSessions(sessionsResult.data.map((row: any) => ({ id: row.id, tableId: row.table_id, tableCode: (tablesResult.data || []).find((table: any) => table.id === row.table_id)?.code || row.table_id, openedAt: row.opened_at, closedAt: row.closed_at || undefined, status: row.status, orderIds: (ordersResult.data || []).filter((order: any) => order.table_session_id === row.id).map((order: any) => order.id), totalAmount: Number(row.total_amount), paidAmount: Number(row.paid_amount), customerCount: row.customer_count })));
+      if (ordersResult.data) setOrders(ordersResult.data.map((row: any) => ({ id: row.id, orderNumber: row.order_number, restaurantId: 'resto-umoja', tableId: row.table_id, tableCode: (tablesResult.data || []).find((table: any) => table.id === row.table_id)?.code || '', sessionId: row.table_session_id || '', items: (itemsByOrder.get(row.id) || []).map(item => ({ id: item.id, productId: item.product_id || '', productName: item.product_name, unitPrice: Number(item.unit_price), quantity: item.quantity, notes: item.notes || undefined, subtotal: Number(item.subtotal) })), totalAmount: Number(row.total_amount), status: row.status, createdAt: row.created_at, preparedAt: row.prepared_at || undefined, servedAt: row.served_at || undefined, specialInstructions: row.special_instructions || undefined, clientName: row.client_name || undefined, orderType: row.order_type })));
+      if (employeesResult.data) setEmployees(loadedEmployees);
+      if (attendanceResult.data) setAttendanceRecords(attendanceResult.data.map((row: any) => {
+        const employee = employeeById.get(row.employee_id);
+        return { id: row.id, employeeId: row.employee_id, matricule: employee?.matricule || '', employeeName: employee ? `${employee.prenom} ${employee.nom}` : 'Employé inconnu', employeePhoto: employee?.photo || '', employeePosition: employee?.poste || '', date: row.date, time: row.time, type: row.type, timestamp: new Date(row.created_at).getTime(), scheduledTime: employee?.scheduledShiftStart || '', delayMinutes: row.delay_minutes, status: row.status, isManualCorrection: row.is_manual_correction, correctionReason: row.correction_reason };
+      }));
+      if (expensesResult.data) setExpenses(expensesResult.data.map((row: any) => ({ id: row.id, date: row.expense_date, category: row.category, description: row.description, amount: Number(row.amount), paymentMethod: row.payment_method, supplier: row.supplier || undefined, reference: row.reference || undefined, recordedBy: row.recorded_by || 'Utilisateur autorisé', createdAt: row.created_at })));
+      if (expenseCategoriesResult.data) setExpenseCategories(expenseCategoriesResult.data.map((row: any) => ({ id: row.id, name: row.name, iconName: row.icon_name, isDefault: row.is_default })));
+      if (invoicesResult.data) setInvoices(invoicesResult.data.map((row: any) => ({ id: row.id, invoiceNumber: row.invoice_number, sessionId: row.table_session_id || '', tableId: row.table_id || '', tableCode: row.table_code || '', orderIds: row.order_ids || [], items: [], subtotal: Number(row.subtotal), discountAmount: Number(row.discount_amount), taxAmount: Number(row.tax_amount), totalAmount: Number(row.total_amount), paidAmount: Number(row.paid_amount), remainingAmount: Math.max(0, Number(row.total_amount) - Number(row.paid_amount)), status: row.status, createdAt: row.created_at, paidAt: row.paid_at || undefined, cashierName: row.cashier_name || '', paymentMethod: row.payment_method, paymentReference: row.payment_reference || undefined })));
+      if (paymentsResult.data) setPaymentTransactions(paymentsResult.data.map((row: any) => ({ id: row.id, invoiceId: row.invoice_id, tableId: '', tableCode: '', amount: Number(row.amount), paymentMethod: row.payment_method, reference: row.reference || undefined, note: row.note || undefined, createdAt: row.created_at, cashierName: row.recorded_by || 'Utilisateur autorisé' })));
+      if (auditResult.data) setAuditLogs(auditResult.data.map((row: any) => ({ id: row.id, userId: row.user_id || '', userName: row.user_id || 'Système', userRole: '', action: row.action, date: row.created_at.slice(0, 10), time: new Date(row.created_at).toTimeString().slice(0, 8), targetEntity: row.target_entity, targetId: row.target_id, oldValue: row.old_value ? JSON.stringify(row.old_value) : undefined, newValue: row.new_value ? JSON.stringify(row.new_value) : undefined, details: row.details || '' })));
+      if (cashSessionsResult.data?.length) {
+        const currentSession = cashSessionsResult.data[0];
+        const cashPayments = (paymentsResult.data || []).filter((payment: any) => payment.payment_method === 'ESPECES').reduce((sum: number, payment: any) => sum + Number(payment.amount), 0);
+        const totalExpenses = (expensesResult.data || []).filter((expense: any) => expense.payment_method === 'ESPECES').reduce((sum: number, expense: any) => sum + Number(expense.amount), 0);
+        const registerFromRow = (row: any): CashRegisterSession => ({ id: row.id, date: row.opened_at.slice(0, 10), openedAt: row.opened_at, openingBalance: Number(row.opening_balance), openedBy: row.opened_by || 'Utilisateur autorisé', status: row.status, closedAt: row.closed_at || undefined, closedBy: row.closed_by || undefined, totalSalesCash: cashPayments, totalSalesMobile: 0, totalSalesCard: 0, totalSalesBank: 0, totalExpenses, theoreticalBalance: Number(row.opening_balance) + cashPayments - totalExpenses, realBalance: row.real_balance === null ? undefined : Number(row.real_balance), variance: row.variance === null ? undefined : Number(row.variance), varianceReason: row.variance_reason || undefined, notes: row.notes || undefined });
+        setCashRegister(registerFromRow(currentSession));
+        setCashClosuresHistory(cashSessionsResult.data.filter((row: any) => row.status === 'CLOSED').map(registerFromRow));
+      }
+    };
+
+    void loadAdminData();
+  }, [authEmail, currentRole, addNotification]);
+
   // Audit logging helper
   const logAudit = useCallback((
     action: string, 
@@ -490,6 +627,19 @@ export const RestaurantProvider: React.FC<{ children: React.ReactNode }> = ({ ch
       details,
     };
     setAuditLogs(prev => [log, ...prev]);
+    if (currentUser?.auth_user_id) {
+      void supabase.from('audit_logs').insert({
+        user_id: currentUser.auth_user_id,
+        action,
+        target_entity: targetEntity,
+        target_id: targetId,
+        old_value: oldValue ? { value: oldValue } : null,
+        new_value: newValue ? { value: newValue } : null,
+        details: details || null,
+      }).then(({ error }) => {
+        if (error) console.error('Audit Supabase error:', error.message);
+      });
+    }
   }, [currentUser, currentRole]);
 
   // Place Client Order
@@ -635,6 +785,14 @@ export const RestaurantProvider: React.FC<{ children: React.ReactNode }> = ({ ch
 
   // Update order status (Kitchen / Service)
   const updateOrderStatus = useCallback((orderId: string, newStatus: OrderStatus) => {
+    const now = new Date().toISOString();
+    void supabase.from('orders').update({
+      status: newStatus,
+      prepared_at: newStatus === 'PRETE' ? now : undefined,
+      served_at: newStatus === 'SERVIE' ? now : undefined,
+    }).eq('id', orderId).then(({ error }) => {
+      if (error) addNotification(`Statut non synchronisé avec Supabase : ${error.message}`, 'error');
+    });
     setOrders(prev => prev.map(ord => {
       if (ord.id === orderId) {
         const oldStatus = ord.status;
@@ -778,15 +936,35 @@ export const RestaurantProvider: React.FC<{ children: React.ReactNode }> = ({ ch
     };
 
     setInvoices(prev => [newInvoice, ...prev]);
+    void supabase.from('invoices').insert({
+      id: newInvoice.id,
+      invoice_number: newInvoice.invoiceNumber,
+      table_session_id: newInvoice.sessionId,
+      table_id: newInvoice.tableId,
+      table_code: newInvoice.tableCode,
+      order_ids: newInvoice.orderIds,
+      created_by: currentUser?.auth_user_id || null,
+      cashier_name: cashierName,
+      subtotal: newInvoice.subtotal,
+      discount_amount: newInvoice.discountAmount,
+      tax_amount: newInvoice.taxAmount,
+      total_amount: newInvoice.totalAmount,
+      paid_amount: 0,
+      status: 'EN_ATTENTE',
+      created_at: newInvoice.createdAt,
+    }).then(({ error }) => {
+      if (error) addNotification(`Facture non enregistrée dans Supabase : ${error.message}`, 'error');
+    });
 
     // Mark table as A_PAYER
     setTables(prev => prev.map(t => t.id === tableId ? { ...t, status: 'A_PAYER' } : t));
+    void supabase.from('restaurant_tables').update({ status: 'A_PAYER' }).eq('id', tableId);
 
     logAudit('GENERATION_FACTURE', 'Invoice', newInvoice.id, undefined, `${invoiceNumber} - Total: ${finalTotal} CNY`, `Facture générée pour ${session.tableCode}`);
     addNotification(`Facture ${invoiceNumber} (${session.tableCode}) générée avec succès !`, 'success');
 
     return newInvoice;
-  }, [tableSessions, orders, invoices.length, logAudit, addNotification]);
+  }, [tableSessions, orders, invoices.length, currentUser, logAudit, addNotification]);
 
   // Record Payment
   const recordPayment = useCallback((
@@ -820,6 +998,25 @@ export const RestaurantProvider: React.FC<{ children: React.ReactNode }> = ({ ch
     };
 
     setPaymentTransactions(prev => [transaction, ...prev]);
+    void supabase.from('payments').insert({
+      id: transaction.id,
+      invoice_id: invoiceId,
+      amount: amountPaid,
+      payment_method: method,
+      reference: reference || null,
+      note: note || null,
+      recorded_by: currentUser?.auth_user_id || null,
+      created_at: transaction.createdAt,
+    }).then(({ error }) => {
+      if (error) addNotification(`Paiement non enregistré dans Supabase : ${error.message}`, 'error');
+    });
+    void supabase.from('invoices').update({
+      paid_amount: newPaidAmount,
+      status: isFullyPaid ? 'PAYEE' : 'EN_ATTENTE',
+      paid_at: isFullyPaid ? new Date().toISOString() : null,
+      payment_method: method,
+      payment_reference: reference || null,
+    }).eq('id', invoiceId);
 
     // Update invoice
     setInvoices(prev => prev.map(inv => {
@@ -886,6 +1083,8 @@ export const RestaurantProvider: React.FC<{ children: React.ReactNode }> = ({ ch
         }
         return t;
       }));
+      void supabase.from('table_sessions').update({ status: 'CLOSED', closed_at: new Date().toISOString(), paid_amount: invoice.totalAmount }).eq('id', invoice.sessionId);
+      void supabase.from('restaurant_tables').update({ status: 'LIBRE' }).eq('id', invoice.tableId);
 
       logAudit('PAIEMENT_TOTAL_FACTURE', 'Invoice', invoiceId, 'EN_ATTENTE', 'PAYEE', `Paiement total reçu de ${amountPaid} FC via ${method}. Table ${invoice.tableCode} libérée.`);
       addNotification(`Paiement de ${amountPaid} FC reçu. Facture ${invoice.invoiceNumber} SOLDÉE. Table libérée !`, 'success');
@@ -969,9 +1168,15 @@ export const RestaurantProvider: React.FC<{ children: React.ReactNode }> = ({ ch
       ...cat,
       id: 'cat-' + Date.now(),
     };
-    setCategories(prev => [...prev, newCat]);
-    logAudit('CREATION_CATEGORIE', 'Category', newCat.id, undefined, newCat.name, `Nouvelle catégorie ${newCat.name}`);
-    addNotification(`Catégorie "${newCat.name}" ajoutée.`, 'success');
+    void supabase.from('categories').insert({ id: newCat.id, name: newCat.name, description: newCat.description || null, icon_name: newCat.iconName, display_order: newCat.order, active: newCat.active }).then(({ error }) => {
+      if (error) {
+        addNotification(`Catégorie non enregistrée dans Supabase : ${error.message}`, 'error');
+        return;
+      }
+      setCategories(prev => [...prev, newCat]);
+      logAudit('CREATION_CATEGORIE', 'Category', newCat.id, undefined, newCat.name, `Nouvelle catégorie ${newCat.name}`);
+      addNotification(`Catégorie "${newCat.name}" ajoutée.`, 'success');
+    });
   }, [logAudit, addNotification]);
 
   const updateCategory = useCallback((id: string, updates: Partial<Category>) => {
@@ -979,8 +1184,14 @@ export const RestaurantProvider: React.FC<{ children: React.ReactNode }> = ({ ch
   }, []);
 
   const deleteCategory = useCallback((id: string) => {
-    setCategories(prev => prev.filter(c => c.id !== id));
-  }, []);
+    void supabase.from('categories').delete().eq('id', id).then(({ error }) => {
+      if (error) {
+        addNotification(`Catégorie non supprimée de Supabase : ${error.message}`, 'error');
+        return;
+      }
+      setCategories(prev => prev.filter(c => c.id !== id));
+    });
+  }, [addNotification]);
 
   // Tables Management
   const addTable = useCallback((table: Omit<RestaurantTable, 'id'>) => {
@@ -989,19 +1200,41 @@ export const RestaurantProvider: React.FC<{ children: React.ReactNode }> = ({ ch
       id: 'tbl-' + Date.now(),
       status: 'LIBRE',
     };
-    setTables(prev => [...prev, newTable]);
-    logAudit('CREATION_TABLE', 'RestaurantTable', newTable.id, undefined, newTable.code, `Ajout de la table ${newTable.code}`);
-    addNotification(`Table "${newTable.code}" créée.`, 'success');
+    void supabase.from('restaurant_tables').insert({ id: newTable.id, code: newTable.code, name: newTable.name || newTable.code, zone: newTable.zone, capacity: newTable.capacity, status: newTable.status, waiter_name: newTable.waiterName || null }).then(({ error }) => {
+      if (error) {
+        addNotification(`Table non enregistrée dans Supabase : ${error.message}`, 'error');
+        return;
+      }
+      setTables(prev => [...prev, newTable]);
+      logAudit('CREATION_TABLE', 'RestaurantTable', newTable.id, undefined, newTable.code, `Ajout de la table ${newTable.code}`);
+      addNotification(`Table "${newTable.code}" créée.`, 'success');
+    });
   }, [logAudit, addNotification]);
 
   const updateTable = useCallback((id: string, updates: Partial<RestaurantTable>) => {
-    setTables(prev => prev.map(t => t.id === id ? { ...t, ...updates } : t));
-    addNotification('Table mise à jour.', 'info');
-  }, [addNotification]);
+    const existing = tables.find(table => table.id === id);
+    if (!existing) return;
+    const updated = { ...existing, ...updates };
+    void supabase.from('restaurant_tables').update({ code: updated.code, name: updated.name, zone: updated.zone, capacity: updated.capacity, status: updated.status, waiter_name: updated.waiterName || null }).eq('id', id).then(({ error }) => {
+      if (error) {
+        addNotification(`Table non modifiée dans Supabase : ${error.message}`, 'error');
+        return;
+      }
+      setTables(prev => prev.map(table => table.id === id ? updated : table));
+      logAudit('MODIFICATION_TABLE', 'RestaurantTable', id, JSON.stringify(existing), JSON.stringify(updated), `Mise à jour de ${updated.code}`);
+      addNotification('Table mise à jour.', 'info');
+    });
+  }, [tables, logAudit, addNotification]);
 
   const deleteTable = useCallback((id: string) => {
-    setTables(prev => prev.filter(t => t.id !== id));
-    addNotification('Table supprimée.', 'warning');
+    void supabase.from('restaurant_tables').delete().eq('id', id).then(({ error }) => {
+      if (error) {
+        addNotification(`Table non supprimée de Supabase : ${error.message}`, 'error');
+        return;
+      }
+      setTables(prev => prev.filter(table => table.id !== id));
+      addNotification('Table supprimée.', 'warning');
+    });
   }, [addNotification]);
 
   // Employee Management
@@ -1018,20 +1251,31 @@ export const RestaurantProvider: React.FC<{ children: React.ReactNode }> = ({ ch
   }, [employees.length, logAudit, addNotification]);
 
   const updateEmployee = useCallback((id: string, updates: Partial<Employee>) => {
-    setEmployees(prev => prev.map(e => {
-      if (e.id === id) {
-        logAudit('MODIFICATION_EMPLOYE', 'Employee', id, undefined, undefined, `Modification fiche de ${e.prenom} ${e.nom}`);
-        return { ...e, ...updates };
+    const existing = employees.find(employee => employee.id === id);
+    if (!existing) return;
+    const updated = { ...existing, ...updates };
+    void supabase.from('employees').update(employeeToSupabase(updated)).eq('id', id).then(({ error }) => {
+      if (error) {
+        addNotification(`Employé non modifié dans Supabase : ${error.message}`, 'error');
+        return;
       }
-      return e;
-    }));
-    addNotification('Fiche employé mise à jour.', 'info');
-  }, [logAudit, addNotification]);
+      setEmployees(prev => prev.map(employee => employee.id === id ? updated : employee));
+      logAudit('MODIFICATION_EMPLOYE', 'Employee', id, JSON.stringify(existing), JSON.stringify(updated), `Modification fiche de ${updated.prenom} ${updated.nom}`);
+      addNotification('Fiche employé mise à jour.', 'info');
+    });
+  }, [employees, logAudit, addNotification]);
 
   const deleteEmployee = useCallback((id: string) => {
-    setEmployees(prev => prev.filter(e => e.id !== id));
-    addNotification('Employé supprimé.', 'warning');
-  }, [addNotification]);
+    void supabase.from('employees').update({ statut: 'INACTIF' }).eq('id', id).then(({ error }) => {
+      if (error) {
+        addNotification(`Employé non désactivé dans Supabase : ${error.message}`, 'error');
+        return;
+      }
+      setEmployees(prev => prev.map(employee => employee.id === id ? { ...employee, statut: 'INACTIF' } : employee));
+      logAudit('DESACTIVATION_EMPLOYE', 'Employee', id, undefined, 'INACTIF', 'Employé désactivé');
+      addNotification('Employé désactivé.', 'warning');
+    });
+  }, [logAudit, addNotification]);
 
   // Attendance Clocking with Strict Delay Calculation & Official Photo
   const clockAttendance = useCallback((
@@ -1091,6 +1335,18 @@ export const RestaurantProvider: React.FC<{ children: React.ReactNode }> = ({ ch
     };
 
     setAttendanceRecords(prev => [record, ...prev]);
+    void supabase.from('attendance_records').insert({
+      id: record.id,
+      employee_id: record.employeeId,
+      recorded_by: currentUser?.auth_user_id || null,
+      date: record.date,
+      time: record.time,
+      type: record.type,
+      status: record.status,
+      delay_minutes: record.delayMinutes,
+    }).then(({ error }) => {
+      if (error) addNotification(`Pointage non enregistré dans Supabase : ${error.message}`, 'error');
+    });
 
     const typeLabels: Record<AttendanceType, string> = {
       ENTREE: 'Arrivée / Prise de poste',
@@ -1114,21 +1370,18 @@ export const RestaurantProvider: React.FC<{ children: React.ReactNode }> = ({ ch
 
   // Correct Attendance (Admin only with justification)
   const correctAttendance = useCallback((recordId: string, newStatus: AttendanceStatus, reason: string, adminName: string) => {
-    setAttendanceRecords(prev => prev.map(rec => {
-      if (rec.id === recordId) {
-        logAudit('CORRECTION_POINTAGE', 'AttendanceRecord', recordId, rec.status, newStatus, `Correction manuelle par ${adminName}. Motif: ${reason}`);
-        return {
-          ...rec,
-          status: newStatus,
-          isManualCorrection: true,
-          correctedBy: adminName,
-          correctionReason: reason,
-        };
+    const existing = attendanceRecords.find(record => record.id === recordId);
+    if (!existing) return;
+    void supabase.from('attendance_records').update({ status: newStatus, is_manual_correction: true, correction_reason: reason, recorded_by: currentUser?.auth_user_id || null }).eq('id', recordId).then(({ error }) => {
+      if (error) {
+        addNotification(`Correction non enregistrée dans Supabase : ${error.message}`, 'error');
+        return;
       }
-      return rec;
-    }));
-    addNotification('Correction de présence enregistrée dans le journal d’audit.', 'info');
-  }, [logAudit, addNotification]);
+      setAttendanceRecords(prev => prev.map(record => record.id === recordId ? { ...record, status: newStatus, isManualCorrection: true, correctedBy: adminName, correctionReason: reason } : record));
+      logAudit('CORRECTION_POINTAGE', 'AttendanceRecord', recordId, existing.status, newStatus, `Correction manuelle par ${adminName}. Motif: ${reason}`);
+      addNotification('Correction de présence enregistrée dans le journal d’audit.', 'info');
+    });
+  }, [attendanceRecords, currentUser, logAudit, addNotification]);
 
   // Expense Management
   const recordExpense = useCallback((data: Omit<Expense, 'id' | 'createdAt'>) => {
@@ -1138,40 +1391,53 @@ export const RestaurantProvider: React.FC<{ children: React.ReactNode }> = ({ ch
       createdAt: new Date().toISOString(),
     };
 
-    setExpenses(prev => [newExpense, ...prev]);
+    void supabase.from('expenses').insert({ id: newExpense.id, category: newExpense.category, description: newExpense.description, amount: newExpense.amount, payment_method: newExpense.paymentMethod, supplier: newExpense.supplier || null, reference: newExpense.reference || null, recorded_by: currentUser?.auth_user_id || null, created_at: newExpense.createdAt, expense_date: newExpense.date }).then(({ error }) => {
+      if (error) {
+        addNotification(`Dépense non enregistrée dans Supabase : ${error.message}`, 'error');
+        return;
+      }
+      setExpenses(prev => [newExpense, ...prev]);
+
+      if (data.paymentMethod === 'ESPECES') {
+        setCashRegister(prev => {
+          const updatedExpenses = prev.totalExpenses + data.amount;
+          return { ...prev, totalExpenses: updatedExpenses, theoreticalBalance: prev.openingBalance + prev.totalSalesCash - updatedExpenses };
+        });
+      }
+
+      logAudit('NOUVELLE_DEPENSE', 'Expense', newExpense.id, undefined, `${newExpense.amount} FC - ${newExpense.category}`, newExpense.description);
+      addNotification(`Dépense de ${newExpense.amount} FC enregistrée (${newExpense.category}).`, 'info');
+    });
 
     // If expense is paid in cash, adjust active cash register theoretical balance
-    if (data.paymentMethod === 'ESPECES') {
-      setCashRegister(prev => {
-        const updatedExpenses = prev.totalExpenses + data.amount;
-        const theoretical = prev.openingBalance + prev.totalSalesCash - updatedExpenses;
-        return {
-          ...prev,
-          totalExpenses: updatedExpenses,
-          theoreticalBalance: theoretical,
-        };
-      });
-    }
-
-    logAudit('NOUVELLE_DEPENSE', 'Expense', newExpense.id, undefined, `${newExpense.amount} FC - ${newExpense.category}`, newExpense.description);
-    addNotification(`Dépense de ${newExpense.amount} FC enregistrée (${newExpense.category}).`, 'info');
-  }, [logAudit, addNotification]);
+  }, [currentUser, logAudit, addNotification]);
 
   const updateExpense = useCallback((id: string, updates: Partial<Expense>) => {
-    setExpenses(prev => prev.map(exp => {
-      if (exp.id === id) {
-        logAudit('MODIFICATION_DEPENSE', 'Expense', id, undefined, JSON.stringify(updates), `Modification dépense ${exp.description}`);
-        return { ...exp, ...updates };
+    const existing = expenses.find(expense => expense.id === id);
+    if (!existing) return;
+    const updated = { ...existing, ...updates };
+    void supabase.from('expenses').update({ category: updated.category, description: updated.description, amount: updated.amount, payment_method: updated.paymentMethod, supplier: updated.supplier || null, reference: updated.reference || null, expense_date: updated.date }).eq('id', id).then(({ error }) => {
+      if (error) {
+        addNotification(`Dépense non modifiée dans Supabase : ${error.message}`, 'error');
+        return;
       }
-      return exp;
-    }));
-    addNotification('Dépense mise à jour.', 'info');
-  }, [logAudit, addNotification]);
+      setExpenses(prev => prev.map(expense => expense.id === id ? updated : expense));
+      logAudit('MODIFICATION_DEPENSE', 'Expense', id, JSON.stringify(existing), JSON.stringify(updated), `Modification dépense ${updated.description}`);
+      addNotification('Dépense mise à jour.', 'info');
+    });
+  }, [expenses, logAudit, addNotification]);
 
   const deleteExpense = useCallback((id: string) => {
-    setExpenses(prev => prev.filter(e => e.id !== id));
-    addNotification('Dépense supprimée.', 'warning');
-  }, [addNotification]);
+    void supabase.from('expenses').delete().eq('id', id).then(({ error }) => {
+      if (error) {
+        addNotification(`Dépense non supprimée de Supabase : ${error.message}`, 'error');
+        return;
+      }
+      setExpenses(prev => prev.filter(expense => expense.id !== id));
+      logAudit('SUPPRESSION_DEPENSE', 'Expense', id, undefined, undefined, 'Dépense supprimée');
+      addNotification('Dépense supprimée.', 'warning');
+    });
+  }, [logAudit, addNotification]);
 
   const addExpenseCategory = useCallback((name: string, iconName = 'Tag') => {
     const newCat: ExpenseCategory = {
@@ -1201,10 +1467,16 @@ export const RestaurantProvider: React.FC<{ children: React.ReactNode }> = ({ ch
       theoreticalBalance: openingBalance,
     };
 
-    setCashRegister(newSession);
-    logAudit('OUVERTURE_CAISSE', 'CashRegisterSession', newSession.id, undefined, `Fond de caisse: ${openingBalance} FC`, `Ouverture par ${openedBy}`);
-    addNotification(`Caisse ouverte avec un fond initial de ${openingBalance} FC.`, 'success');
-  }, [logAudit, addNotification]);
+    void supabase.from('cash_register_sessions').insert({ id: newSession.id, opened_by: currentUser?.auth_user_id || null, opened_at: newSession.openedAt, opening_balance: openingBalance, status: 'OPEN' }).then(({ error }) => {
+      if (error) {
+        addNotification(`Ouverture de caisse refusée par Supabase : ${error.message}`, 'error');
+        return;
+      }
+      setCashRegister(newSession);
+      logAudit('OUVERTURE_CAISSE', 'CashRegisterSession', newSession.id, undefined, `Fond de caisse: ${openingBalance} FC`, `Ouverture par ${openedBy}`);
+      addNotification(`Caisse ouverte avec un fond initial de ${openingBalance} FC.`, 'success');
+    });
+  }, [currentUser, logAudit, addNotification]);
 
   const closeCashRegister = useCallback((
     realCount: number,
@@ -1224,21 +1496,18 @@ export const RestaurantProvider: React.FC<{ children: React.ReactNode }> = ({ ch
       notes,
     };
 
-    setCashRegister(closedSession);
-    setCashClosuresHistory(prev => [closedSession, ...prev]);
-
-    logAudit(
-      'CLOTURE_CAISSE',
-      'CashRegisterSession',
-      closedSession.id,
-      `Théorique: ${cashRegister.theoreticalBalance} FC`,
-      `Réel: ${realCount} FC (Écart: ${variance} FC)`,
-      `Clôture validée par ${closedBy}. ${justification ? `Justification: ${justification}` : 'Aucun écart.'}`
-    );
-
-    addNotification(`Clôture de caisse effectuée. Écart: ${variance} FC.`, variance === 0 ? 'success' : 'warning');
+    void supabase.from('cash_register_sessions').update({ status: 'CLOSED', closed_by: currentUser?.auth_user_id || null, closed_at: closedSession.closedAt, real_balance: realCount, variance, variance_reason: justification || null, notes: notes || null }).eq('id', closedSession.id).then(({ error }) => {
+      if (error) {
+        addNotification(`Clôture non enregistrée dans Supabase : ${error.message}`, 'error');
+        return;
+      }
+      setCashRegister(closedSession);
+      setCashClosuresHistory(prev => [closedSession, ...prev]);
+      logAudit('CLOTURE_CAISSE', 'CashRegisterSession', closedSession.id, `Théorique: ${cashRegister.theoreticalBalance} FC`, `Réel: ${realCount} FC (Écart: ${variance} FC)`, `Clôture validée par ${closedBy}. ${justification ? `Justification: ${justification}` : 'Aucun écart.'}`);
+      addNotification(`Clôture de caisse effectuée. Écart: ${variance} FC.`, variance === 0 ? 'success' : 'warning');
+    });
     return closedSession;
-  }, [cashRegister, logAudit, addNotification]);
+  }, [cashRegister, currentUser, logAudit, addNotification]);
 
   const updateRestaurantInfo = useCallback((info: Partial<RestaurantInfo>) => {
     setRestaurantInfo(prev => ({ ...prev, ...info }));

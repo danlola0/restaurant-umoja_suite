@@ -51,7 +51,7 @@ export const ExpenseManager: React.FC = () => {
       amount,
       description,
       supplier: supplier.trim() || undefined,
-      receiptNumber: receiptNumber.trim() || undefined,
+      reference: receiptNumber.trim() || undefined,
       paymentMethod,
       recordedBy,
     });
@@ -151,7 +151,7 @@ export const ExpenseManager: React.FC = () => {
 
                   <td className="py-3 px-4">
                     <span className="font-mono text-[10px] text-stone-400">
-                      {exp.paymentMethod} {exp.receiptNumber ? `(${exp.receiptNumber})` : ''}
+                      {exp.paymentMethod} {exp.reference ? `(${exp.reference})` : ''}
                     </span>
                   </td>
 

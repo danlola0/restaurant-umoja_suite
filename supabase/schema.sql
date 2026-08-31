@@ -119,6 +119,13 @@ create table if not exists public.invoices (
   paid_at timestamptz
 );
 
+alter table public.invoices add column if not exists table_id text references public.restaurant_tables(id) on delete set null;
+alter table public.invoices add column if not exists table_code text;
+alter table public.invoices add column if not exists order_ids jsonb not null default '[]'::jsonb;
+alter table public.invoices add column if not exists cashier_name text;
+alter table public.invoices add column if not exists payment_method text;
+alter table public.invoices add column if not exists payment_reference text;
+
 create table if not exists public.payments (
   id text primary key,
   invoice_id text not null references public.invoices(id) on delete restrict,
@@ -174,6 +181,29 @@ create table if not exists public.expenses (
   created_at timestamptz not null default now()
 );
 
+alter table public.expenses add column if not exists expense_date date not null default current_date;
+
+create table if not exists public.expense_categories (
+  id text primary key,
+  name text not null unique,
+  icon_name text not null default 'Tag',
+  is_default boolean not null default false
+);
+
+create table if not exists public.cash_register_sessions (
+  id text primary key,
+  opened_by uuid references public.profiles(id) on delete set null,
+  opened_at timestamptz not null default now(),
+  closed_by uuid references public.profiles(id) on delete set null,
+  closed_at timestamptz,
+  opening_balance numeric(12, 2) not null default 0 check (opening_balance >= 0),
+  real_balance numeric(12, 2),
+  variance numeric(12, 2),
+  variance_reason text,
+  notes text,
+  status text not null default 'OPEN' check (status in ('OPEN', 'CLOSED'))
+);
+
 create table if not exists public.audit_logs (
   id uuid primary key default gen_random_uuid(),
   user_id uuid references public.profiles(id) on delete set null,
@@ -190,6 +220,8 @@ create index if not exists orders_created_by_idx on public.orders(created_by);
 create index if not exists orders_status_idx on public.orders(status);
 create index if not exists attendance_employee_idx on public.attendance_records(employee_id, date);
 create index if not exists payments_invoice_idx on public.payments(invoice_id);
+create index if not exists expenses_created_at_idx on public.expenses(created_at);
+create index if not exists cash_register_sessions_opened_at_idx on public.cash_register_sessions(opened_at desc);
 
 create or replace function public.has_role(required_roles text[])
 returns boolean
@@ -304,6 +336,8 @@ alter table public.attendance_records enable row level security;
 alter table public.webauthn_credentials enable row level security;
 alter table public.webauthn_challenges enable row level security;
 alter table public.expenses enable row level security;
+alter table public.expense_categories enable row level security;
+alter table public.cash_register_sessions enable row level security;
 alter table public.audit_logs enable row level security;
 
 drop policy if exists profiles_select_own on public.profiles;
@@ -336,6 +370,10 @@ drop policy if exists attendance_self_insert on public.attendance_records;
 drop policy if exists attendance_manager_update on public.attendance_records;
 drop policy if exists expenses_manager_read on public.expenses;
 drop policy if exists expenses_manager_write on public.expenses;
+drop policy if exists expense_categories_manager_read on public.expense_categories;
+drop policy if exists expense_categories_admin_write on public.expense_categories;
+drop policy if exists cash_register_sessions_staff_read on public.cash_register_sessions;
+drop policy if exists cash_register_sessions_cashier_write on public.cash_register_sessions;
 drop policy if exists audit_admin_read on public.audit_logs;
 drop policy if exists audit_authenticated_insert on public.audit_logs;
 drop policy if exists webauthn_credentials_self_read on public.webauthn_credentials;
@@ -383,6 +421,12 @@ create policy attendance_manager_update on public.attendance_records for update 
 create policy expenses_manager_read on public.expenses for select using (recorded_by = auth.uid() or public.has_role(array['ADMINISTRATEUR', 'RESPONSABLE', 'CAISSIER']));
 create policy expenses_manager_write on public.expenses for all using (public.has_role(array['ADMINISTRATEUR', 'RESPONSABLE', 'CAISSIER'])) with check (public.has_role(array['ADMINISTRATEUR', 'RESPONSABLE', 'CAISSIER']));
 
+create policy expense_categories_manager_read on public.expense_categories for select using (public.has_role(array['ADMINISTRATEUR', 'RESPONSABLE', 'CAISSIER']));
+create policy expense_categories_admin_write on public.expense_categories for all using (public.has_role(array['ADMINISTRATEUR', 'RESPONSABLE'])) with check (public.has_role(array['ADMINISTRATEUR', 'RESPONSABLE']));
+
+create policy cash_register_sessions_staff_read on public.cash_register_sessions for select using (public.has_role(array['ADMINISTRATEUR', 'RESPONSABLE', 'CAISSIER']));
+create policy cash_register_sessions_cashier_write on public.cash_register_sessions for all using (public.has_role(array['ADMINISTRATEUR', 'RESPONSABLE', 'CAISSIER'])) with check (public.has_role(array['ADMINISTRATEUR', 'RESPONSABLE', 'CAISSIER']));
+
 create policy audit_admin_read on public.audit_logs for select using (user_id = auth.uid() or public.has_role(array['ADMINISTRATEUR', 'RESPONSABLE']));
 create policy audit_authenticated_insert on public.audit_logs for insert with check (user_id = auth.uid());
 
@@ -390,3 +434,17 @@ create policy webauthn_credentials_self_read on public.webauthn_credentials
 for select using (exists (select 1 from public.employees where employees.id = employee_id and employees.auth_user_id = auth.uid()) or public.has_role(array['ADMINISTRATEUR', 'RESPONSABLE']));
 create policy webauthn_credentials_manager_all on public.webauthn_credentials
 for all using (public.has_role(array['ADMINISTRATEUR', 'RESPONSABLE'])) with check (public.has_role(array['ADMINISTRATEUR', 'RESPONSABLE']));
+
+create or replace function public.prevent_audit_log_changes()
+returns trigger
+language plpgsql
+as $$
+begin
+  raise exception 'Les journaux d''audit sont immuables';
+end;
+$$;
+
+drop trigger if exists audit_logs_immutable on public.audit_logs;
+create trigger audit_logs_immutable
+before update or delete on public.audit_logs
+for each row execute procedure public.prevent_audit_log_changes();
