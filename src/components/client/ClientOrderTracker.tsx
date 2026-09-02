@@ -19,6 +19,15 @@ export const ClientOrderTracker: React.FC = () => {
   const { selectedTableId, tables, orders, tableSessions, addNotification, updateTableStatus } = useRestaurant();
 
   const currentTable = tables.find(t => t.id === selectedTableId) || tables[0];
+  if (!currentTable) {
+    return (
+      <div className="bg-stone-900/60 border border-stone-800 rounded-2xl p-6 text-center text-stone-400">
+        <UtensilsCrossed className="w-10 h-10 mx-auto text-stone-600 mb-2" />
+        <h4 className="text-sm font-bold text-stone-300">Table indisponible</h4>
+        <p className="text-xs text-stone-500 mt-1">La sélection de votre table sera disponible dès son chargement.</p>
+      </div>
+    );
+  }
 
   const activeSession =
     tableSessions.find(s => s.tableId === currentTable.id && s.status === 'ACTIVE') ||

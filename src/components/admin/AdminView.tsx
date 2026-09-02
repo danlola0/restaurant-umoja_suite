@@ -50,8 +50,8 @@ export const AdminView: React.FC = () => {
     <div className="min-h-[calc(100vh-4rem)] bg-stone-950 text-stone-100 p-4 sm:p-6 lg:p-8 space-y-6">
       
       {/* Sub-Navigation Bar */}
-      <div className="bg-stone-900 border border-stone-800 rounded-2xl p-2 shadow-xl overflow-x-auto">
-        <div className="flex items-center gap-1.5 min-w-max">
+      <div className="bg-stone-900 border border-stone-800 rounded-2xl p-2 shadow-xl overflow-x-auto overscroll-x-contain">
+        <div className="flex w-max items-center gap-1.5">
           {navigationItems.map(item => {
             const Icon = item.icon;
             const isActive = activeTab === item.id;

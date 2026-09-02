@@ -9,9 +9,7 @@ interface LoginPageProps {
 
 const destinationForRole = (role: UserRole): string => {
   if (role === 'ADMINISTRATEUR' || role === 'RESPONSABLE') return '/admin/dashboard';
-  if (role === 'CAISSIER') return '/cashier/dashboard';
-  if (role === 'CUISINE') return '/kitchen/dashboard';
-  if (role === 'SERVEUR' || role === 'EMPLOYE' || role === 'POINTAGE') return '/staff/dashboard';
+  if (role === 'CAISSIER' || role === 'CUISINE' || role === 'SERVEUR' || role === 'EMPLOYE' || role === 'POINTAGE') return '/staff/dashboard';
   return '/menu';
 };
 

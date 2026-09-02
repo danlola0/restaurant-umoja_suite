@@ -1,10 +1,12 @@
 import React, { useEffect, useState } from 'react';
 import { RestaurantProvider, useRestaurant } from './context/RestaurantContext';
 import { Header } from './components/common/Header';
+import { SplashScreen } from './components/common/SplashScreen';
 import { ClientMenuView } from './components/client/ClientMenuView';
 import { KitchenKdsView } from './components/kitchen/KitchenKdsView';
 import { CashierPosView } from './components/cashier/CashierPosView';
 import { AttendanceKioskView } from './components/attendance/AttendanceKioskView';
+import { PublicAttendanceKiosk } from './components/attendance/PublicAttendanceKiosk';
 import { AdminView } from './components/admin/AdminView';
 import { LoginModal } from './components/auth/LoginModal';
 import { LoginPage } from './components/auth/LoginPage';
@@ -43,7 +45,7 @@ const AppContent: React.FC = () => {
         : path.startsWith('/kitchen') || path.startsWith('/cuisine')
           ? currentRole === 'CUISINE'
           : path.startsWith('/staff') || path.startsWith('/personnel')
-            ? ['SERVEUR', 'EMPLOYE', 'POINTAGE'].includes(currentRole)
+            ? ['ADMINISTRATEUR', 'RESPONSABLE', 'CAISSIER', 'CUISINE', 'SERVEUR', 'EMPLOYE', 'POINTAGE'].includes(currentRole)
             : ['ADMINISTRATEUR', 'RESPONSABLE'].includes(currentRole);
 
     if (!authEmail || !allowed) {
@@ -62,7 +64,12 @@ const AppContent: React.FC = () => {
 
   const isInternalPath = path.startsWith('/admin') || path.startsWith('/cashier') || path.startsWith('/kitchen') || path.startsWith('/staff') || ['/caisse', '/cuisine', '/personnel', '/depenses', '/rapports'].some(prefix => path.startsWith(prefix));
   const isLoginPath = path === '/login';
-  const showClient = !isInternalPath && !isLoginPath;
+  const isPublicAttendancePath = path === '/pointage';
+  const showClient = !isInternalPath && !isLoginPath && !isPublicAttendancePath;
+
+  if (authLoading) {
+    return <SplashScreen />;
+  }
 
   if (isLoginPath) {
     return <LoginPage onNavigate={goTo} />;
@@ -87,6 +94,8 @@ const AppContent: React.FC = () => {
           <ClientMenuView />
         )}
 
+        {isPublicAttendancePath && <PublicAttendanceKiosk />}
+
         {(path.startsWith('/kitchen') || path.startsWith('/cuisine')) && currentRole === 'CUISINE' && (
           <KitchenKdsView />
         )}
@@ -95,8 +104,8 @@ const AppContent: React.FC = () => {
           <CashierPosView />
         )}
 
-        {(path.startsWith('/staff') || path.startsWith('/personnel')) && ['POINTAGE', 'EMPLOYE', 'SERVEUR'].includes(currentRole) && (
-          <AttendanceKioskView />
+        {(path.startsWith('/staff') || path.startsWith('/personnel')) && ['ADMINISTRATEUR', 'RESPONSABLE', 'CAISSIER', 'CUISINE', 'POINTAGE', 'EMPLOYE', 'SERVEUR'].includes(currentRole) && (
+          <AttendanceKioskView onNavigate={goTo} />
         )}
 
         {path.startsWith('/admin') && ['ADMINISTRATEUR', 'RESPONSABLE'].includes(currentRole) && (
@@ -113,11 +122,7 @@ const AppContent: React.FC = () => {
         onAuthenticated={(role) => {
           const destination = role === 'ADMINISTRATEUR' || role === 'RESPONSABLE'
             ? '/admin/dashboard'
-            : role === 'CAISSIER'
-              ? '/cashier/dashboard'
-              : role === 'CUISINE'
-                ? '/kitchen/dashboard'
-                : role === 'SERVEUR' || role === 'EMPLOYE' || role === 'POINTAGE'
+            : role === 'CAISSIER' || role === 'CUISINE' || role === 'SERVEUR' || role === 'EMPLOYE' || role === 'POINTAGE'
                   ? '/staff/dashboard'
                   : '/menu';
           goTo(destination);

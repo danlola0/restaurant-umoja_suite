@@ -82,6 +82,7 @@ export const ClientMenuView: React.FC = () => {
   const totalCartCount = cartItems.reduce((acc, item) => acc + item.quantity, 0);
   const totalCartAmount = cartItems.reduce((acc, item) => acc + item.product.price * item.quantity, 0);
   const currentTable = tables.find(t => t.id === selectedTableId) || tables[0];
+  const currentTableCode = currentTable?.code || 'Table non sélectionnée';
 
   return (
     <div className="min-h-[calc(100vh-4rem)] bg-stone-950 text-stone-100 pb-28">
@@ -109,7 +110,7 @@ export const ClientMenuView: React.FC = () => {
                   Menu Digital Sans Contact
                 </span>
                 <span className="text-xs text-stone-400">
-                  Table actuelle : <strong className="text-amber-400">{currentTable.code}</strong>
+                  Table actuelle : <strong className="text-amber-400">{currentTableCode}</strong>
                 </span>
               </div>
               <h1 className="text-2xl sm:text-3xl font-extrabold text-stone-100 tracking-tight mt-1">
@@ -353,7 +354,7 @@ export const ClientMenuView: React.FC = () => {
               </div>
               <div>
                 <div className="text-xs font-bold uppercase tracking-wider text-amber-950">
-                  Votre Panier ({currentTable.code})
+                  Votre Panier ({currentTableCode})
                 </div>
                 <div className="text-base sm:text-lg font-black font-mono leading-tight">
                   {formatFC(totalCartAmount)}

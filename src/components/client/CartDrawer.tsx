@@ -51,13 +51,14 @@ export const CartDrawer: React.FC<CartDrawerProps> = ({
   const totalAmount = cartItems.reduce((sum, item) => sum + item.product.price * item.quantity, 0);
   const totalItemsCount = cartItems.reduce((sum, item) => sum + item.quantity, 0);
   const currentTable = tables.find(t => t.id === selectedTableId) || tables[0];
+  const currentTableCode = currentTable?.code || 'Table non sélectionnée';
 
-  const handleSubmitOrder = () => {
+  const handleSubmitOrder = async () => {
     if (cartItems.length === 0) return;
     setIsSubmitting(true);
 
     try {
-      const order = placeClientOrder(
+      const order = await placeClientOrder(
         selectedTableId,
         cartItems,
         clientName.trim() || undefined,
@@ -67,8 +68,9 @@ export const CartDrawer: React.FC<CartDrawerProps> = ({
       onClearCart();
       onClose();
       onOrderSuccess(order.id);
-    } catch (e) {
-      console.error(e);
+    } catch (error) {
+      console.error(error);
+      window.alert(error instanceof Error ? error.message : 'La commande n’a pas pu être enregistrée.');
     } finally {
       setIsSubmitting(false);
     }
@@ -269,7 +271,7 @@ export const CartDrawer: React.FC<CartDrawerProps> = ({
                 ) : (
                   <>
                     <CheckCircle className="w-4 h-4" />
-                    Confirmer la commande • {currentTable.code}
+                    Confirmer la commande • {currentTableCode}
                   </>
                 )}
               </button>

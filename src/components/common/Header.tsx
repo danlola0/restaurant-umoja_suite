@@ -60,6 +60,7 @@ export const Header: React.FC<HeaderProps> = ({ onOpenCart, cartCount = 0, onOpe
   const activeKitchenOrdersCount = orders.filter(o => ['NOUVELLE', 'ACCEPTEE', 'EN_PREPARATION'].includes(o.status)).length;
   const readyOrdersCount = orders.filter(o => o.status === 'PRETE').length;
   const currentTable = tables.find(t => t.id === selectedTableId) || tables[0];
+  const currentTableCode = currentTable?.code || 'Table non sélectionnée';
 
   const roleLabels: Partial<Record<UserRole, string>> = {
     CLIENT: 'Espace Client', CUISINE: 'Écran Cuisine (KDS)', CAISSIER: 'Caisse & Tables (POS)',
@@ -76,29 +77,30 @@ export const Header: React.FC<HeaderProps> = ({ onOpenCart, cartCount = 0, onOpe
   const visibleInternalNavItems = internalNavItems.filter(item => {
     if (currentRole === 'ADMINISTRATEUR' || currentRole === 'RESPONSABLE') return item.role === 'ADMINISTRATEUR';
     if (currentRole === 'SERVEUR' || currentRole === 'EMPLOYE' || currentRole === 'POINTAGE') return item.role === 'EMPLOYE';
-    return item.role === currentRole;
+    return item.role === currentRole || item.role === 'EMPLOYE';
   });
+  const canAccessPersonalAttendance = currentRole !== 'CLIENT' && Boolean(currentUser);
 
   return (
     <header className="sticky top-0 z-40 bg-stone-900 text-stone-100 border-b border-stone-800 shadow-md">
       {/* Top Banner */}
       <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
-        <div className="flex items-center justify-between h-16 gap-4">
+        <div className="flex min-h-16 flex-wrap items-center justify-between gap-2 py-2 sm:flex-nowrap sm:gap-4 sm:py-0">
           
           {/* Logo & Identity */}
-          <div className="flex items-center gap-3 min-w-max cursor-pointer" onClick={() => onNavigate?.('/menu')}>
-            <div className="w-10 h-10 rounded-xl bg-gradient-to-br from-amber-500 to-amber-700 flex items-center justify-center shadow-lg shadow-amber-900/40 text-stone-950 font-bold text-xl ring-2 ring-amber-400/30">
+          <div className="flex min-w-0 items-center gap-2 sm:gap-3 cursor-pointer" onClick={() => onNavigate?.('/menu')}>
+            <div className="w-9 h-9 shrink-0 rounded-xl bg-gradient-to-br from-amber-500 to-amber-700 flex items-center justify-center shadow-lg shadow-amber-900/40 text-stone-950 font-bold text-lg sm:w-10 sm:h-10 sm:text-xl ring-2 ring-amber-400/30">
               U
             </div>
-            <div>
+            <div className="min-w-0">
               <div className="flex items-center gap-2">
-                <span className="font-bold text-lg tracking-tight text-amber-400">{restaurantInfo.name}</span>
+                <span className="truncate font-bold text-base tracking-tight text-amber-400 sm:text-lg">{restaurantInfo.name}</span>
                 <span className="hidden sm:inline-block px-2 py-0.5 text-[10px] uppercase tracking-wider font-semibold rounded bg-amber-500/20 text-amber-300 border border-amber-500/30">
                   Kinshasa RDC
                 </span>
               </div>
               <p className="text-xs text-stone-400 hidden md:block">
-                {isPublicExperience ? `${activeRoleLabel} • ${currentTable.code}` : restaurantInfo.slogan}
+                {isPublicExperience ? `${activeRoleLabel} • ${currentTableCode}` : restaurantInfo.slogan}
               </p>
             </div>
           </div>
@@ -133,16 +135,16 @@ export const Header: React.FC<HeaderProps> = ({ onOpenCart, cartCount = 0, onOpe
           </nav>
 
           {/* Right Controls: Table Selector (if Client), Time, Notifications & Role Switcher */}
-          <div className="flex items-center gap-2 sm:gap-3">
+          <div className="flex shrink-0 items-center gap-1.5 max-[480px]:w-full max-[480px]:justify-end sm:gap-3">
             
             {/* Table selector for Client mode */}
             {(isPublicExperience || currentRole === 'CLIENT') && (
-              <div className="flex items-center gap-1.5 bg-amber-950/40 border border-amber-800/40 px-2.5 py-1 rounded-lg text-xs">
+              <div className="flex max-w-[128px] items-center gap-1.5 bg-amber-950/40 border border-amber-800/40 px-1.5 py-1 rounded-lg text-xs sm:max-w-none sm:px-2.5">
                 <span className="text-amber-400 font-medium hidden sm:inline">Votre table :</span>
                 <select
                   value={selectedTableId}
                   onChange={(e) => setSelectedTableId(e.target.value)}
-                  className="bg-stone-900 text-amber-200 border border-amber-600/40 rounded px-2 py-0.5 text-xs font-semibold focus:outline-none focus:ring-1 focus:ring-amber-500"
+                  className="min-w-0 max-w-[105px] bg-stone-900 text-amber-200 border border-amber-600/40 rounded px-1.5 py-0.5 text-xs font-semibold focus:outline-none focus:ring-1 focus:ring-amber-500 sm:max-w-none sm:px-2"
                 >
                   {tables.map(t => (
                     <option key={t.id} value={t.id}>
@@ -166,6 +168,17 @@ export const Header: React.FC<HeaderProps> = ({ onOpenCart, cartCount = 0, onOpe
                     {cartCount}
                   </span>
                 )}
+              </button>
+            )}
+
+            {!isPublicExperience && canAccessPersonalAttendance && (
+              <button
+                onClick={() => onNavigate?.('/staff/dashboard')}
+                className="flex items-center gap-1.5 rounded-lg border border-amber-500/40 bg-amber-500/15 px-2 py-1.5 text-xs font-bold text-amber-300 transition hover:bg-amber-500/25"
+                title="Ouvrir le pointage personnel"
+              >
+                <Clock className="h-3.5 w-3.5" />
+                <span>Pointage</span>
               </button>
             )}
 
@@ -233,10 +246,20 @@ export const Header: React.FC<HeaderProps> = ({ onOpenCart, cartCount = 0, onOpe
 
             {/* Mobile / Quick Role Switcher Button */}
             {isPublicExperience || currentRole === 'CLIENT' ? (
-              <button onClick={() => onNavigate?.('/login')} className="flex items-center gap-1.5 bg-stone-800 hover:bg-stone-700 text-stone-200 px-2.5 py-1.5 rounded-lg text-xs transition">
-                <ShieldAlert className="w-3.5 h-3.5" />
-                <span>Espace personnel</span>
-              </button>
+              <div className="flex items-center gap-1.5">
+                <button onClick={() => onNavigate?.('/pointage')} className="flex items-center gap-1.5 rounded-lg border border-amber-500/40 bg-amber-500/15 px-2.5 py-1.5 text-xs font-bold text-amber-300 transition hover:bg-amber-500/25">
+                  <Clock className="h-3.5 w-3.5" />
+                  <span>Pointage Personnel</span>
+                </button>
+                <button onClick={() => onNavigate?.('/login')} className="flex items-center gap-1.5 rounded-lg bg-stone-800 px-2.5 py-1.5 text-xs text-stone-200 transition hover:bg-stone-700">
+                  <ShieldAlert className="h-3.5 w-3.5" />
+                  <span className="hidden md:inline">Espace personnel</span>
+                </button>
+                <button onClick={() => onNavigate?.('/menu')} className="flex items-center gap-1.5 rounded-lg bg-stone-800 px-2.5 py-1.5 text-xs text-stone-200 transition hover:bg-stone-700">
+                  <Utensils className="h-3.5 w-3.5" />
+                  <span className="hidden sm:inline">Espace Client</span>
+                </button>
+              </div>
             ) : <div className="relative lg:hidden">
               <button
                 onClick={() => setShowRoleMenu(!showRoleMenu)}

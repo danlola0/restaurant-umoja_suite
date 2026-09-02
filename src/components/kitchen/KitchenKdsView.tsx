@@ -2,6 +2,7 @@ import React, { useState, useEffect } from 'react';
 import { useRestaurant } from '../../context/RestaurantContext';
 import { Order, OrderStatus } from '../../types';
 import { formatTimeOnly, playNotificationSound } from '../../utils/formatters';
+import { ServiceExpensePanel } from '../common/ServiceExpensePanel';
 import { 
   ChefHat, 
   Clock, 
@@ -94,13 +95,13 @@ export const KitchenKdsView: React.FC = () => {
       
       {/* KDS Header & Controls */}
       <div className="bg-stone-900 border border-stone-800 rounded-2xl p-4 sm:p-5 shadow-xl flex flex-col md:flex-row md:items-center justify-between gap-4">
-        <div className="flex items-center gap-3">
+        <div className="flex min-w-0 items-center gap-3">
           <div className="p-3 rounded-xl bg-amber-500/20 text-amber-400 border border-amber-500/30">
             <ChefHat className="w-6 h-6" />
           </div>
-          <div>
-            <div className="flex items-center gap-2">
-              <h1 className="text-xl font-extrabold text-stone-100 tracking-tight">
+          <div className="min-w-0">
+            <div className="flex flex-wrap items-center gap-2">
+              <h1 className="text-lg font-extrabold text-stone-100 tracking-tight sm:text-xl">
                 Écran Cuisine Umoja (KDS)
               </h1>
               <span className="px-2 py-0.5 rounded text-xs font-bold bg-amber-500 text-stone-950">
@@ -114,12 +115,12 @@ export const KitchenKdsView: React.FC = () => {
         </div>
 
         {/* Filter Buttons & Audio Toggle */}
-        <div className="flex flex-wrap items-center gap-2">
+        <div className="flex min-w-0 items-center gap-2">
           
-          <div className="flex items-center bg-stone-950 p-1 rounded-xl border border-stone-800">
+          <div className="flex min-w-0 flex-1 items-center gap-1 overflow-x-auto bg-stone-950 p-1 rounded-xl border border-stone-800">
             <button
               onClick={() => setFilterStatus('ACTIVE')}
-              className={`px-3 py-1.5 rounded-lg text-xs font-bold transition ${
+                className={`shrink-0 px-3 py-1.5 rounded-lg text-xs font-bold transition ${
                 filterStatus === 'ACTIVE'
                   ? 'bg-amber-600 text-white shadow'
                   : 'text-stone-400 hover:text-stone-200'
@@ -129,7 +130,7 @@ export const KitchenKdsView: React.FC = () => {
             </button>
             <button
               onClick={() => setFilterStatus('NOUVELLE')}
-              className={`px-3 py-1.5 rounded-lg text-xs font-bold transition ${
+                className={`shrink-0 px-3 py-1.5 rounded-lg text-xs font-bold transition ${
                 filterStatus === 'NOUVELLE'
                   ? 'bg-amber-600 text-white shadow'
                   : 'text-stone-400 hover:text-stone-200'
@@ -139,7 +140,7 @@ export const KitchenKdsView: React.FC = () => {
             </button>
             <button
               onClick={() => setFilterStatus('EN_PREPARATION')}
-              className={`px-3 py-1.5 rounded-lg text-xs font-bold transition ${
+                className={`shrink-0 px-3 py-1.5 rounded-lg text-xs font-bold transition ${
                 filterStatus === 'EN_PREPARATION'
                   ? 'bg-amber-600 text-white shadow'
                   : 'text-stone-400 hover:text-stone-200'
@@ -149,7 +150,7 @@ export const KitchenKdsView: React.FC = () => {
             </button>
             <button
               onClick={() => setFilterStatus('PRETE')}
-              className={`px-3 py-1.5 rounded-lg text-xs font-bold transition ${
+                className={`shrink-0 px-3 py-1.5 rounded-lg text-xs font-bold transition ${
                 filterStatus === 'PRETE'
                   ? 'bg-amber-600 text-white shadow'
                   : 'text-stone-400 hover:text-stone-200'
@@ -159,7 +160,7 @@ export const KitchenKdsView: React.FC = () => {
             </button>
             <button
               onClick={() => setFilterStatus('SERVIE')}
-              className={`px-3 py-1.5 rounded-lg text-xs font-bold transition ${
+                className={`shrink-0 px-3 py-1.5 rounded-lg text-xs font-bold transition ${
                 filterStatus === 'SERVIE'
                   ? 'bg-amber-600 text-white shadow'
                   : 'text-stone-400 hover:text-stone-200'
@@ -186,6 +187,8 @@ export const KitchenKdsView: React.FC = () => {
 
         </div>
       </div>
+
+      <ServiceExpensePanel service="CUISINE" title="Cuisine" />
 
       {/* Orders Tickets Grid */}
       {filteredOrders.length === 0 ? (

@@ -1,6 +1,7 @@
 import React, { useState } from 'react';
 import { useRestaurant } from '../../context/RestaurantContext';
 import { formatFC, formatDateOnly, formatDateTime } from '../../utils/formatters';
+import { RecipeProfitability } from './RecipeProfitability';
 import { 
   FileSpreadsheet, 
   Download, 
@@ -26,7 +27,7 @@ export const ReportsManager: React.FC = () => {
     products 
   } = useRestaurant();
 
-  const [activeReportTab, setActiveReportTab] = useState<'FINANCIER' | 'VENTES' | 'RH' | 'CAISSE'>('FINANCIER');
+  const [activeReportTab, setActiveReportTab] = useState<'FINANCIER' | 'VENTES' | 'RH' | 'CAISSE' | 'RENTABILITE'>('FINANCIER');
 
   const totalRevenue = invoices.filter(i => i.status === 'PAYEE').reduce((sum, i) => sum + i.paidAmount, 0);
   const totalExpenses = expenses.reduce((sum, e) => sum + e.amount, 0);
@@ -127,6 +128,7 @@ export const ReportsManager: React.FC = () => {
           { key: 'VENTES', label: 'Ventes & Plats Stars', icon: Utensils },
           { key: 'RH', label: 'Rapport RH & Masse Salariale', icon: Users },
           { key: 'CAISSE', label: 'Journal des Encaissements', icon: Layers },
+          { key: 'RENTABILITE', label: 'Rentabilité des recettes', icon: TrendingUp },
         ].map(tab => {
           const Icon = tab.icon;
           const isActive = activeReportTab === tab.key;
@@ -286,6 +288,8 @@ export const ReportsManager: React.FC = () => {
           </div>
         </div>
       )}
+
+      {activeReportTab === 'RENTABILITE' && <RecipeProfitability />}
 
     </div>
   );

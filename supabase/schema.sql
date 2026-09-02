@@ -55,6 +55,23 @@ create table if not exists public.products (
   tags text[] not null default '{}'
 );
 
+create table if not exists public.ingredients (
+  id text primary key,
+  name text not null unique,
+  unit text not null default 'unité',
+  unit_cost numeric(12, 2) not null default 0 check (unit_cost >= 0),
+  last_expense_id text,
+  updated_at timestamptz not null default now()
+);
+
+create table if not exists public.recipe_ingredients (
+  id text primary key,
+  product_id text not null references public.products(id) on delete cascade,
+  ingredient_id text not null references public.ingredients(id) on delete restrict,
+  quantity numeric(12, 3) not null check (quantity > 0),
+  unique (product_id, ingredient_id)
+);
+
 create table if not exists public.restaurant_tables (
   id text primary key,
   code text not null unique,
@@ -151,6 +168,9 @@ create table if not exists public.attendance_records (
   created_at timestamptz not null default now()
 );
 
+alter table public.attendance_records add column if not exists validation_method text not null default 'PIN'
+  check (validation_method in ('PIN', 'WEBAUTHN_PASSKEY'));
+
 create table if not exists public.webauthn_credentials (
   id uuid primary key default gen_random_uuid(),
   employee_id text not null references public.employees(id) on delete cascade,
@@ -182,6 +202,18 @@ create table if not exists public.expenses (
 );
 
 alter table public.expenses add column if not exists expense_date date not null default current_date;
+alter table public.expenses add column if not exists service text not null default 'ADMINISTRATION'
+  check (service in ('CUISINE', 'CAISSE', 'ADMINISTRATION'));
+alter table public.expenses add column if not exists item_name text;
+alter table public.expenses add column if not exists quantity numeric(12, 2) check (quantity is null or quantity > 0);
+
+do $$
+begin
+  alter table public.ingredients add constraint ingredients_last_expense_id_fkey
+    foreign key (last_expense_id) references public.expenses(id) on delete set null;
+exception when duplicate_object then null;
+end;
+$$;
 
 create table if not exists public.expense_categories (
   id text primary key,
@@ -189,6 +221,23 @@ create table if not exists public.expense_categories (
   icon_name text not null default 'Tag',
   is_default boolean not null default false
 );
+
+insert into public.expense_categories (id, name, icon_name, is_default)
+values
+  ('exp-vegetables', 'Légumes', 'Carrot', true),
+  ('exp-meat', 'Viande', 'Beef', true),
+  ('exp-flour', 'Fufu / Farine', 'Wheat', true),
+  ('exp-rice', 'Riz', 'Wheat', true),
+  ('exp-fish', 'Poisson', 'Fish', true),
+  ('exp-spices', 'Épices et condiments', 'Soup', true),
+  ('exp-drinks', 'Boissons', 'GlassWater', true),
+  ('exp-food-other', 'Autres achats alimentaires', 'ShoppingBasket', true),
+  ('exp-maintenance', 'Entretien', 'Wrench', true),
+  ('exp-transport', 'Transport', 'Truck', true),
+  ('exp-electricity', 'Électricité', 'Zap', true),
+  ('exp-water', 'Eau', 'Droplets', true),
+  ('exp-other', 'Autres dépenses', 'Tag', true)
+on conflict (name) do nothing;
 
 create table if not exists public.cash_register_sessions (
   id text primary key,
@@ -218,6 +267,7 @@ create table if not exists public.audit_logs (
 
 create index if not exists orders_created_by_idx on public.orders(created_by);
 create index if not exists orders_status_idx on public.orders(status);
+create index if not exists recipe_ingredients_product_idx on public.recipe_ingredients(product_id);
 create index if not exists attendance_employee_idx on public.attendance_records(employee_id, date);
 create index if not exists payments_invoice_idx on public.payments(invoice_id);
 create index if not exists expenses_created_at_idx on public.expenses(created_at);
@@ -326,6 +376,8 @@ alter table public.profiles enable row level security;
 alter table public.employees enable row level security;
 alter table public.categories enable row level security;
 alter table public.products enable row level security;
+alter table public.ingredients enable row level security;
+alter table public.recipe_ingredients enable row level security;
 alter table public.restaurant_tables enable row level security;
 alter table public.table_sessions enable row level security;
 alter table public.orders enable row level security;
@@ -349,17 +401,23 @@ drop policy if exists categories_public_read on public.categories;
 drop policy if exists categories_admin_all on public.categories;
 drop policy if exists products_public_read on public.products;
 drop policy if exists products_admin_all on public.products;
+drop policy if exists ingredients_admin_all on public.ingredients;
+drop policy if exists recipe_ingredients_admin_all on public.recipe_ingredients;
 drop policy if exists tables_authenticated_read on public.restaurant_tables;
+drop policy if exists tables_public_read on public.restaurant_tables;
 drop policy if exists tables_manager_all on public.restaurant_tables;
 drop policy if exists sessions_owner_or_staff on public.table_sessions;
+drop policy if exists sessions_public_read on public.table_sessions;
 drop policy if exists sessions_staff_write on public.table_sessions;
 drop policy if exists orders_owner_or_staff on public.orders;
+drop policy if exists orders_public_read on public.orders;
 drop policy if exists orders_client_insert on public.orders;
 drop policy if exists orders_public_insert on public.orders;
 drop policy if exists sessions_public_insert on public.table_sessions;
 drop policy if exists order_items_public_insert on public.order_items;
 drop policy if exists orders_staff_update on public.orders;
 drop policy if exists order_items_visible_with_order on public.order_items;
+drop policy if exists order_items_public_read on public.order_items;
 drop policy if exists order_items_staff_write on public.order_items;
 drop policy if exists invoices_staff_read on public.invoices;
 drop policy if exists invoices_cashier_write on public.invoices;
@@ -370,6 +428,8 @@ drop policy if exists attendance_self_insert on public.attendance_records;
 drop policy if exists attendance_manager_update on public.attendance_records;
 drop policy if exists expenses_manager_read on public.expenses;
 drop policy if exists expenses_manager_write on public.expenses;
+drop policy if exists expenses_service_read on public.expenses;
+drop policy if exists expenses_service_insert on public.expenses;
 drop policy if exists expense_categories_manager_read on public.expense_categories;
 drop policy if exists expense_categories_admin_write on public.expense_categories;
 drop policy if exists cash_register_sessions_staff_read on public.cash_register_sessions;
@@ -392,13 +452,18 @@ create policy categories_admin_all on public.categories for all using (public.ha
 create policy products_public_read on public.products for select using (available = true or public.has_role(array['ADMINISTRATEUR', 'RESPONSABLE', 'CUISINE', 'CAISSIER']));
 create policy products_admin_all on public.products for all using (public.has_role(array['ADMINISTRATEUR', 'RESPONSABLE'])) with check (public.has_role(array['ADMINISTRATEUR', 'RESPONSABLE']));
 
-create policy tables_authenticated_read on public.restaurant_tables for select using (auth.uid() is not null);
+create policy ingredients_admin_all on public.ingredients for all using (public.has_role(array['ADMINISTRATEUR', 'RESPONSABLE'])) with check (public.has_role(array['ADMINISTRATEUR', 'RESPONSABLE']));
+create policy recipe_ingredients_admin_all on public.recipe_ingredients for all using (public.has_role(array['ADMINISTRATEUR', 'RESPONSABLE'])) with check (public.has_role(array['ADMINISTRATEUR', 'RESPONSABLE']));
+
+create policy tables_public_read on public.restaurant_tables for select using (true);
 create policy tables_manager_all on public.restaurant_tables for all using (public.has_role(array['ADMINISTRATEUR', 'RESPONSABLE', 'CAISSIER', 'SERVEUR'])) with check (public.has_role(array['ADMINISTRATEUR', 'RESPONSABLE', 'CAISSIER', 'SERVEUR']));
 
 create policy sessions_owner_or_staff on public.table_sessions for select using (opened_by = auth.uid() or public.has_role(array['ADMINISTRATEUR', 'RESPONSABLE', 'CAISSIER', 'SERVEUR', 'CUISINE']));
+create policy sessions_public_read on public.table_sessions for select using (opened_by is null and status = 'ACTIVE');
 create policy sessions_staff_write on public.table_sessions for all using (public.has_role(array['ADMINISTRATEUR', 'RESPONSABLE', 'CAISSIER', 'SERVEUR'])) with check (public.has_role(array['ADMINISTRATEUR', 'RESPONSABLE', 'CAISSIER', 'SERVEUR']));
 
 create policy orders_owner_or_staff on public.orders for select using (created_by = auth.uid() or public.has_role(array['ADMINISTRATEUR', 'RESPONSABLE', 'CAISSIER', 'SERVEUR', 'CUISINE']));
+create policy orders_public_read on public.orders for select using (created_by is null);
 create policy orders_client_insert on public.orders for insert with check (created_by = auth.uid());
 create policy orders_public_insert on public.orders for insert with check (created_by is null and status = 'NOUVELLE');
 create policy sessions_public_insert on public.table_sessions for insert with check (opened_by is null and status = 'ACTIVE');
@@ -407,6 +472,7 @@ create policy order_items_public_insert on public.order_items for insert with ch
 );
 create policy orders_staff_update on public.orders for update using (public.has_role(array['ADMINISTRATEUR', 'RESPONSABLE', 'CUISINE', 'SERVEUR'])) with check (public.has_role(array['ADMINISTRATEUR', 'RESPONSABLE', 'CUISINE', 'SERVEUR']));
 create policy order_items_visible_with_order on public.order_items for select using (exists (select 1 from public.orders where orders.id = order_id and (orders.created_by = auth.uid() or public.has_role(array['ADMINISTRATEUR', 'RESPONSABLE', 'CAISSIER', 'SERVEUR', 'CUISINE']))));
+create policy order_items_public_read on public.order_items for select using (exists (select 1 from public.orders where orders.id = order_id and orders.created_by is null));
 create policy order_items_staff_write on public.order_items for all using (public.has_role(array['ADMINISTRATEUR', 'RESPONSABLE', 'CUISINE', 'SERVEUR'])) with check (public.has_role(array['ADMINISTRATEUR', 'RESPONSABLE', 'CUISINE', 'SERVEUR']));
 
 create policy invoices_staff_read on public.invoices for select using (created_by = auth.uid() or public.has_role(array['ADMINISTRATEUR', 'RESPONSABLE', 'CAISSIER']));
@@ -418,8 +484,20 @@ create policy attendance_self_read on public.attendance_records for select using
 create policy attendance_self_insert on public.attendance_records for insert with check (exists (select 1 from public.employees where employees.id = employee_id and employees.auth_user_id = auth.uid()) or public.has_role(array['ADMINISTRATEUR', 'RESPONSABLE']));
 create policy attendance_manager_update on public.attendance_records for update using (public.has_role(array['ADMINISTRATEUR', 'RESPONSABLE'])) with check (public.has_role(array['ADMINISTRATEUR', 'RESPONSABLE']));
 
-create policy expenses_manager_read on public.expenses for select using (recorded_by = auth.uid() or public.has_role(array['ADMINISTRATEUR', 'RESPONSABLE', 'CAISSIER']));
-create policy expenses_manager_write on public.expenses for all using (public.has_role(array['ADMINISTRATEUR', 'RESPONSABLE', 'CAISSIER'])) with check (public.has_role(array['ADMINISTRATEUR', 'RESPONSABLE', 'CAISSIER']));
+create policy expenses_service_read on public.expenses for select using (
+  public.has_role(array['ADMINISTRATEUR', 'RESPONSABLE'])
+  or (public.has_role(array['CUISINE']) and service = 'CUISINE')
+  or (public.has_role(array['CAISSIER']) and service = 'CAISSE')
+);
+create policy expenses_service_insert on public.expenses for insert with check (
+  recorded_by = auth.uid()
+  and (
+    public.has_role(array['ADMINISTRATEUR', 'RESPONSABLE'])
+    or (public.has_role(array['CUISINE']) and service = 'CUISINE')
+    or (public.has_role(array['CAISSIER']) and service = 'CAISSE')
+  )
+);
+create policy expenses_manager_write on public.expenses for update using (public.has_role(array['ADMINISTRATEUR', 'RESPONSABLE'])) with check (public.has_role(array['ADMINISTRATEUR', 'RESPONSABLE']));
 
 create policy expense_categories_manager_read on public.expense_categories for select using (public.has_role(array['ADMINISTRATEUR', 'RESPONSABLE', 'CAISSIER']));
 create policy expense_categories_admin_write on public.expense_categories for all using (public.has_role(array['ADMINISTRATEUR', 'RESPONSABLE'])) with check (public.has_role(array['ADMINISTRATEUR', 'RESPONSABLE']));
@@ -448,3 +526,16 @@ drop trigger if exists audit_logs_immutable on public.audit_logs;
 create trigger audit_logs_immutable
 before update or delete on public.audit_logs
 for each row execute procedure public.prevent_audit_log_changes();
+
+do $$
+declare
+  table_name text;
+begin
+  foreach table_name in array array['restaurant_tables', 'table_sessions', 'orders', 'order_items', 'payments'] loop
+    begin
+      execute format('alter publication supabase_realtime add table public.%I', table_name);
+    exception when duplicate_object then null;
+    end;
+  end loop;
+end;
+$$;

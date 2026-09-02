@@ -5,6 +5,8 @@ import {
   RestaurantInfo,
   Category,
   Product,
+  Ingredient,
+  RecipeIngredient,
   RestaurantTable,
   Order,
   OrderStatus,
@@ -56,6 +58,8 @@ interface RestaurantContextType {
   restaurantInfo: RestaurantInfo;
   categories: Category[];
   products: Product[];
+  ingredients: Ingredient[];
+  recipeIngredients: RecipeIngredient[];
   tables: RestaurantTable[];
   orders: Order[];
   tableSessions: TableSession[];
@@ -84,12 +88,12 @@ interface RestaurantContextType {
     items: { product: Product; quantity: number; notes?: string }[], 
     clientName?: string, 
     specialInstructions?: string
-  ) => Order;
+  ) => Promise<Order>;
   updateOrderStatus: (orderId: string, newStatus: OrderStatus) => void;
   cancelOrder: (orderId: string, reason?: string) => void;
 
   // Tables & Sessions
-  openTableSession: (tableId: string, customerCount: number, waiterName?: string) => TableSession;
+  openTableSession: (tableId: string, customerCount: number, waiterName?: string) => Promise<TableSession>;
   updateTableStatus: (tableId: string, status: RestaurantTable['status']) => void;
   addTable: (table: Omit<RestaurantTable, 'id'>) => void;
   updateTable: (id: string, updates: Partial<RestaurantTable>) => void;
@@ -110,6 +114,9 @@ interface RestaurantContextType {
   updateProduct: (id: string, updates: Partial<Product>) => Promise<void>;
   deleteProduct: (id: string) => Promise<void>;
   toggleProductAvailability: (id: string) => Promise<void>;
+  addIngredient: (name: string, unit: string, unitCost: number) => Promise<boolean>;
+  setRecipeIngredient: (productId: string, ingredientId: string, quantity: number) => Promise<boolean>;
+  removeRecipeIngredient: (recipeIngredientId: string) => Promise<boolean>;
   addCategory: (cat: Omit<Category, 'id'>) => void;
   updateCategory: (id: string, updates: Partial<Category>) => void;
   deleteCategory: (id: string) => void;
@@ -119,15 +126,14 @@ interface RestaurantContextType {
   createStaffAccount: (data: { email: string; password: string; role: UserRole; employee: Omit<Employee, 'id' | 'matricule' | 'auth_user_id'> }) => Promise<{ success: boolean; message: string }>;
   updateEmployee: (id: string, updates: Partial<Employee>) => void;
   deleteEmployee: (id: string) => void;
-  clockAttendance: (
-    matricule: string, 
-    pin: string, 
+  clockCurrentUserAttendance: (
+    pin: string,
     type: AttendanceType
-  ) => { success: boolean; message: string; record?: AttendanceRecord; employee?: Employee };
+  ) => Promise<{ success: boolean; message: string; record?: AttendanceRecord }>;
   correctAttendance: (recordId: string, newStatus: AttendanceStatus, reason: string, adminName: string) => void;
 
   // Expenses
-  recordExpense: (data: Omit<Expense, 'id' | 'createdAt'>) => void;
+  recordExpense: (data: Omit<Expense, 'id' | 'createdAt'>) => Promise<boolean>;
   updateExpense: (id: string, updates: Partial<Expense>) => void;
   deleteExpense: (id: string) => void;
   addExpenseCategory: (name: string, iconName?: string) => void;
@@ -162,20 +168,23 @@ type SupabaseProductRow = {
   tags: string[];
 };
 
-const productFromSupabase = (row: SupabaseProductRow): Product => ({
-  id: row.id,
-  categoryId: row.category_id || '',
-  name: row.name,
-  description: row.description,
-  price: Number(row.price),
-  photo: row.photo,
-  available: row.available,
-  isRecommended: row.is_recommended,
-  order: row.display_order,
-  preparationTimeMinutes: row.preparation_time_minutes,
-  spicyLevel: row.spicy_level,
-  tags: row.tags || [],
-});
+const productFromSupabase = (row: SupabaseProductRow): Product => {
+  const historicalProduct = initialProducts.find(product => product.id === row.id);
+  return {
+    id: row.id,
+    categoryId: row.category_id || '',
+    name: row.name,
+    description: row.description,
+    price: Number(row.price),
+    photo: row.photo?.trim() || historicalProduct?.photo || '',
+    available: row.available,
+    isRecommended: row.is_recommended,
+    order: row.display_order,
+    preparationTimeMinutes: row.preparation_time_minutes,
+    spicyLevel: row.spicy_level,
+    tags: row.tags || [],
+  };
+};
 
 const productToSupabase = (product: Product) => ({
   id: product.id,
@@ -296,6 +305,8 @@ export const RestaurantProvider: React.FC<{ children: React.ReactNode }> = ({ ch
       return p;
     });
   });
+  const [ingredients, setIngredients] = useState<Ingredient[]>([]);
+  const [recipeIngredients, setRecipeIngredients] = useState<RecipeIngredient[]>([]);
 
   const [tables, setTables] = useState<RestaurantTable[]>(() => 
     loadFromStorage('tables', initialTables)
@@ -369,9 +380,20 @@ export const RestaurantProvider: React.FC<{ children: React.ReactNode }> = ({ ch
       }
 
       const role = profile.role as UserRole;
-      const linkedEmployee = employees.find(employee => employee.auth_user_id === userId);
+      const { data: employeeRow } = await supabase
+        .from('employees')
+        .select('*')
+        .eq('auth_user_id', userId)
+        .maybeSingle();
+      if (!mounted) return;
+      const linkedEmployee = employeeRow
+        ? employeeFromSupabase(employeeRow)
+        : null;
+      if (linkedEmployee) {
+        setEmployees(previous => [linkedEmployee, ...previous.filter(employee => employee.id !== linkedEmployee.id)]);
+      }
       setCurrentRole(role);
-      setCurrentUser(linkedEmployee || null);
+      setCurrentUser(linkedEmployee);
       setAuthEmail(email || null);
     };
 
@@ -404,11 +426,15 @@ export const RestaurantProvider: React.FC<{ children: React.ReactNode }> = ({ ch
       mounted = false;
       subscription.unsubscribe();
     };
-  }, [employees]);
+  }, []);
 
   const signIn = useCallback(async (email: string, password: string) => {
+    setAuthLoading(true);
     const { data, error } = await supabase.auth.signInWithPassword({ email, password });
-    if (error || !data.user) return { success: false, message: error?.message || 'Connexion refusée.' };
+    if (error || !data.user) {
+      setAuthLoading(false);
+      return { success: false, message: error?.message || 'Connexion refusée.' };
+    }
 
     const { data: profile, error: profileError } = await supabase
       .from('profiles')
@@ -417,6 +443,7 @@ export const RestaurantProvider: React.FC<{ children: React.ReactNode }> = ({ ch
       .single();
     if (profileError || !profile) {
       await supabase.auth.signOut();
+      setAuthLoading(false);
       return { success: false, message: 'Profil utilisateur introuvable.' };
     }
 
@@ -438,6 +465,10 @@ export const RestaurantProvider: React.FC<{ children: React.ReactNode }> = ({ ch
       },
     });
     if (error || !result?.success) return { success: false, message: result?.error || error?.message || 'Création du compte impossible.' };
+    const { data: employee, error: employeeError } = await supabase.from('employees').select('*').eq('id', result.employeeId).single();
+    if (employeeError || !employee) return { success: false, message: 'Compte créé, mais le profil employé ne peut pas être rechargé.' };
+    const newEmployee = employeeFromSupabase(employee);
+    setEmployees(previous => [newEmployee, ...previous.filter(existing => existing.id !== newEmployee.id)]);
     return { success: true, message: `Compte créé. Matricule : ${result.matricule}` };
   }, []);
 
@@ -507,7 +538,21 @@ export const RestaurantProvider: React.FC<{ children: React.ReactNode }> = ({ ch
       }
       if (categoriesError) addNotification(`Catégories non synchronisées : ${categoriesError.message}`, 'warning');
       if (data && data.length > 0) {
-        setProducts((data as SupabaseProductRow[]).map(productFromSupabase));
+        const productRows = data as SupabaseProductRow[];
+        const loadedProducts = productRows.map(productFromSupabase);
+        const productsMissingPhoto = productRows
+          .filter(row => !row.photo?.trim() && initialProducts.some(product => product.id === row.id && product.photo))
+          .map(productFromSupabase);
+
+        if (authEmail && ['ADMINISTRATEUR', 'RESPONSABLE'].includes(currentRole) && productsMissingPhoto.length > 0) {
+          const updates = await Promise.all(productsMissingPhoto.map(product =>
+            supabase.from('products').update({ photo: product.photo }).eq('id', product.id)
+          ));
+          const failedUpdate = updates.find(result => result.error);
+          if (failedUpdate?.error) addNotification(`Images produits non synchronisées : ${failedUpdate.error.message}`, 'warning');
+        }
+
+        setProducts(loadedProducts);
       } else if (authEmail && ['ADMINISTRATEUR', 'RESPONSABLE'].includes(currentRole)) {
         const { error: seedError } = await supabase.from('products').upsert(products.map(productToSupabase), { onConflict: 'id' });
         if (seedError) {
@@ -519,6 +564,72 @@ export const RestaurantProvider: React.FC<{ children: React.ReactNode }> = ({ ch
 
     void loadProducts();
   }, [authEmail, currentRole, categories, addNotification]);
+
+  useEffect(() => {
+    let mounted = true;
+
+    const refreshOperationalData = async () => {
+      const [tablesResult, sessionsResult, ordersResult, itemsResult] = await Promise.all([
+        supabase.from('restaurant_tables').select('*').order('code'),
+        supabase.from('table_sessions').select('*').eq('status', 'ACTIVE').order('opened_at', { ascending: false }),
+        supabase.from('orders').select('*').order('created_at', { ascending: false }),
+        supabase.from('order_items').select('*'),
+      ]);
+      if (!mounted || tablesResult.error || sessionsResult.error || ordersResult.error || itemsResult.error) return;
+
+      const persistedTables = tablesResult.data || [];
+      const itemsByOrder = new Map<string, any[]>();
+      (itemsResult.data || []).forEach((item: any) => {
+        const items = itemsByOrder.get(item.order_id) || [];
+        items.push(item);
+        itemsByOrder.set(item.order_id, items);
+      });
+      const persistedOrders = ordersResult.data || [];
+      setTables(persistedTables.map(tableFromSupabase));
+      setTableSessions((sessionsResult.data || []).map((row: any) => ({
+        id: row.id,
+        tableId: row.table_id,
+        tableCode: persistedTables.find((table: any) => table.id === row.table_id)?.code || row.table_id,
+        openedAt: row.opened_at,
+        closedAt: row.closed_at || undefined,
+        status: row.status,
+        orderIds: persistedOrders.filter((order: any) => order.table_session_id === row.id).map((order: any) => order.id),
+        totalAmount: Number(row.total_amount),
+        paidAmount: Number(row.paid_amount),
+        customerCount: row.customer_count,
+      })));
+      setOrders(persistedOrders.map((row: any) => ({
+        id: row.id,
+        orderNumber: row.order_number,
+        restaurantId: 'resto-umoja',
+        tableId: row.table_id,
+        tableCode: persistedTables.find((table: any) => table.id === row.table_id)?.code || '',
+        sessionId: row.table_session_id || '',
+        items: (itemsByOrder.get(row.id) || []).map(item => ({ id: item.id, productId: item.product_id || '', productName: item.product_name, unitPrice: Number(item.unit_price), quantity: item.quantity, notes: item.notes || undefined, subtotal: Number(item.subtotal) })),
+        totalAmount: Number(row.total_amount),
+        status: row.status,
+        createdAt: row.created_at,
+        preparedAt: row.prepared_at || undefined,
+        servedAt: row.served_at || undefined,
+        specialInstructions: row.special_instructions || undefined,
+        clientName: row.client_name || undefined,
+        orderType: row.order_type,
+      })));
+    };
+
+    void refreshOperationalData();
+    const channel = supabase.channel('umoja-operational-sync')
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'restaurant_tables' }, refreshOperationalData)
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'table_sessions' }, refreshOperationalData)
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'orders' }, refreshOperationalData)
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'order_items' }, refreshOperationalData)
+      .subscribe();
+
+    return () => {
+      mounted = false;
+      void supabase.removeChannel(channel);
+    };
+  }, []);
 
   useEffect(() => {
     if (adminDataLoaded.current || !authEmail || !['ADMINISTRATEUR', 'RESPONSABLE'].includes(currentRole)) return;
@@ -574,17 +685,38 @@ export const RestaurantProvider: React.FC<{ children: React.ReactNode }> = ({ ch
         itemsByOrder.set(item.order_id, items);
       });
 
+      let persistedTables = tablesResult.data || [];
+      if (persistedTables.length === 0) {
+        const { data: createdTables, error: createTablesError } = await supabase
+          .from('restaurant_tables')
+          .upsert(initialTables.map(table => ({
+            id: table.id,
+            code: table.code,
+            name: table.name,
+            zone: table.zone,
+            capacity: table.capacity,
+            status: table.status,
+            waiter_name: table.waiterName || null,
+          })), { onConflict: 'id' })
+          .select();
+        if (createTablesError) {
+          addNotification(`Tables initiales non enregistrées dans Supabase : ${createTablesError.message}`, 'error');
+          return;
+        }
+        persistedTables = createdTables || [];
+      }
+
       if (categoriesResult.data) setCategories(categoriesResult.data.map((row: any) => ({ id: row.id, name: row.name, description: row.description || undefined, iconName: row.icon_name, order: row.display_order, active: row.active })));
       if (productsResult.data) setProducts(productsResult.data.map(productFromSupabase));
-      if (tablesResult.data) setTables(tablesResult.data.map(tableFromSupabase));
-      if (sessionsResult.data) setTableSessions(sessionsResult.data.map((row: any) => ({ id: row.id, tableId: row.table_id, tableCode: (tablesResult.data || []).find((table: any) => table.id === row.table_id)?.code || row.table_id, openedAt: row.opened_at, closedAt: row.closed_at || undefined, status: row.status, orderIds: (ordersResult.data || []).filter((order: any) => order.table_session_id === row.id).map((order: any) => order.id), totalAmount: Number(row.total_amount), paidAmount: Number(row.paid_amount), customerCount: row.customer_count })));
-      if (ordersResult.data) setOrders(ordersResult.data.map((row: any) => ({ id: row.id, orderNumber: row.order_number, restaurantId: 'resto-umoja', tableId: row.table_id, tableCode: (tablesResult.data || []).find((table: any) => table.id === row.table_id)?.code || '', sessionId: row.table_session_id || '', items: (itemsByOrder.get(row.id) || []).map(item => ({ id: item.id, productId: item.product_id || '', productName: item.product_name, unitPrice: Number(item.unit_price), quantity: item.quantity, notes: item.notes || undefined, subtotal: Number(item.subtotal) })), totalAmount: Number(row.total_amount), status: row.status, createdAt: row.created_at, preparedAt: row.prepared_at || undefined, servedAt: row.served_at || undefined, specialInstructions: row.special_instructions || undefined, clientName: row.client_name || undefined, orderType: row.order_type })));
+      setTables(persistedTables.map(tableFromSupabase));
+      if (sessionsResult.data) setTableSessions(sessionsResult.data.map((row: any) => ({ id: row.id, tableId: row.table_id, tableCode: persistedTables.find((table: any) => table.id === row.table_id)?.code || row.table_id, openedAt: row.opened_at, closedAt: row.closed_at || undefined, status: row.status, orderIds: (ordersResult.data || []).filter((order: any) => order.table_session_id === row.id).map((order: any) => order.id), totalAmount: Number(row.total_amount), paidAmount: Number(row.paid_amount), customerCount: row.customer_count })));
+      if (ordersResult.data) setOrders(ordersResult.data.map((row: any) => ({ id: row.id, orderNumber: row.order_number, restaurantId: 'resto-umoja', tableId: row.table_id, tableCode: persistedTables.find((table: any) => table.id === row.table_id)?.code || '', sessionId: row.table_session_id || '', items: (itemsByOrder.get(row.id) || []).map(item => ({ id: item.id, productId: item.product_id || '', productName: item.product_name, unitPrice: Number(item.unit_price), quantity: item.quantity, notes: item.notes || undefined, subtotal: Number(item.subtotal) })), totalAmount: Number(row.total_amount), status: row.status, createdAt: row.created_at, preparedAt: row.prepared_at || undefined, servedAt: row.served_at || undefined, specialInstructions: row.special_instructions || undefined, clientName: row.client_name || undefined, orderType: row.order_type })));
       if (employeesResult.data) setEmployees(loadedEmployees);
       if (attendanceResult.data) setAttendanceRecords(attendanceResult.data.map((row: any) => {
         const employee = employeeById.get(row.employee_id);
         return { id: row.id, employeeId: row.employee_id, matricule: employee?.matricule || '', employeeName: employee ? `${employee.prenom} ${employee.nom}` : 'Employé inconnu', employeePhoto: employee?.photo || '', employeePosition: employee?.poste || '', date: row.date, time: row.time, type: row.type, timestamp: new Date(row.created_at).getTime(), scheduledTime: employee?.scheduledShiftStart || '', delayMinutes: row.delay_minutes, status: row.status, isManualCorrection: row.is_manual_correction, correctionReason: row.correction_reason };
       }));
-      if (expensesResult.data) setExpenses(expensesResult.data.map((row: any) => ({ id: row.id, date: row.expense_date, category: row.category, description: row.description, amount: Number(row.amount), paymentMethod: row.payment_method, supplier: row.supplier || undefined, reference: row.reference || undefined, recordedBy: row.recorded_by || 'Utilisateur autorisé', createdAt: row.created_at })));
+      if (expensesResult.data) setExpenses(expensesResult.data.map((row: any) => ({ id: row.id, date: row.expense_date, service: row.service || 'ADMINISTRATION', category: row.category, itemName: row.item_name || undefined, quantity: row.quantity === null ? undefined : Number(row.quantity), description: row.description, amount: Number(row.amount), paymentMethod: row.payment_method, supplier: row.supplier || undefined, reference: row.reference || undefined, recordedBy: row.recorded_by || 'Utilisateur autorisé', createdAt: row.created_at })));
       if (expenseCategoriesResult.data) setExpenseCategories(expenseCategoriesResult.data.map((row: any) => ({ id: row.id, name: row.name, iconName: row.icon_name, isDefault: row.is_default })));
       if (invoicesResult.data) setInvoices(invoicesResult.data.map((row: any) => ({ id: row.id, invoiceNumber: row.invoice_number, sessionId: row.table_session_id || '', tableId: row.table_id || '', tableCode: row.table_code || '', orderIds: row.order_ids || [], items: [], subtotal: Number(row.subtotal), discountAmount: Number(row.discount_amount), taxAmount: Number(row.tax_amount), totalAmount: Number(row.total_amount), paidAmount: Number(row.paid_amount), remainingAmount: Math.max(0, Number(row.total_amount) - Number(row.paid_amount)), status: row.status, createdAt: row.created_at, paidAt: row.paid_at || undefined, cashierName: row.cashier_name || '', paymentMethod: row.payment_method, paymentReference: row.payment_reference || undefined })));
       if (paymentsResult.data) setPaymentTransactions(paymentsResult.data.map((row: any) => ({ id: row.id, invoiceId: row.invoice_id, tableId: '', tableCode: '', amount: Number(row.amount), paymentMethod: row.payment_method, reference: row.reference || undefined, note: row.note || undefined, createdAt: row.created_at, cashierName: row.recorded_by || 'Utilisateur autorisé' })));
@@ -600,6 +732,23 @@ export const RestaurantProvider: React.FC<{ children: React.ReactNode }> = ({ ch
     };
 
     void loadAdminData();
+  }, [authEmail, currentRole, addNotification]);
+
+  useEffect(() => {
+    if (!authEmail || !['ADMINISTRATEUR', 'RESPONSABLE'].includes(currentRole)) return;
+    const loadRecipeData = async () => {
+      const [ingredientsResult, recipeIngredientsResult] = await Promise.all([
+        supabase.from('ingredients').select('*').order('name'),
+        supabase.from('recipe_ingredients').select('*'),
+      ]);
+      if (ingredientsResult.error || recipeIngredientsResult.error) {
+        addNotification(`Recettes non chargées : ${ingredientsResult.error?.message || recipeIngredientsResult.error?.message}`, 'error');
+        return;
+      }
+      setIngredients((ingredientsResult.data || []).map((row: any) => ({ id: row.id, name: row.name, unit: row.unit, unitCost: Number(row.unit_cost), lastExpenseId: row.last_expense_id || undefined })));
+      setRecipeIngredients((recipeIngredientsResult.data || []).map((row: any) => ({ id: row.id, productId: row.product_id, ingredientId: row.ingredient_id, quantity: Number(row.quantity) })));
+    };
+    void loadRecipeData();
   }, [authEmail, currentRole, addNotification]);
 
   // Audit logging helper
@@ -643,18 +792,20 @@ export const RestaurantProvider: React.FC<{ children: React.ReactNode }> = ({ ch
   }, [currentUser, currentRole]);
 
   // Place Client Order
-  const placeClientOrder = useCallback((
+  const placeClientOrder = useCallback(async (
     tableId: string,
     items: { product: Product; quantity: number; notes?: string }[],
     clientName?: string,
     specialInstructions?: string
-  ): Order => {
+  ): Promise<Order> => {
     const table = tables.find(t => t.id === tableId) || tables[0];
+    if (!table) throw new Error('Aucune table disponible pour enregistrer la commande.');
     const orderNumber = '#' + (1000 + orders.length + 1);
     
     // Find or create table session
     let session = tableSessions.find(s => s.tableId === table.id && s.status === 'ACTIVE');
     let sessionId = session?.id;
+    const sessionWasCreated = !session;
 
     if (!session) {
       sessionId = 'sess-' + Date.now();
@@ -670,7 +821,6 @@ export const RestaurantProvider: React.FC<{ children: React.ReactNode }> = ({ ch
         waiterName: table.waiterName || 'Service Umoja',
         customerCount: table.capacity || 2,
       };
-      setTableSessions(prev => [session!, ...prev]);
     }
 
     // Critical rule: Capture unit price AT ORDER TIME (Snapshot)
@@ -702,11 +852,8 @@ export const RestaurantProvider: React.FC<{ children: React.ReactNode }> = ({ ch
       orderType: 'SUR_PLACE',
     };
 
-    // Update orders list
-    setOrders(prev => [newOrder, ...prev]);
-
-    // Persist the public client order in Supabase without exposing internal data.
-    void (async () => {
+    // Persist the complete public client order before updating the visible interface.
+    if (sessionWasCreated) {
       const sessionPayload = {
         id: session!.id,
         table_id: table.id,
@@ -717,43 +864,42 @@ export const RestaurantProvider: React.FC<{ children: React.ReactNode }> = ({ ch
         total_amount: totalAmount,
         paid_amount: 0,
       };
-      const { error: sessionError } = await supabase.from('table_sessions').upsert(sessionPayload, { onConflict: 'id' });
+      const { error: sessionError } = await supabase.from('table_sessions').insert(sessionPayload);
       if (sessionError) {
-        addNotification(`Commande non synchronisée avec Supabase : ${sessionError.message}`, 'error');
-        return;
+        throw new Error(`Session non enregistrée dans Supabase : ${sessionError.message}`);
       }
-      const { error: orderError } = await supabase.from('orders').insert({
-        id: newOrder.id,
-        order_number: orderNumber,
-        table_session_id: session!.id,
-        table_id: table.id,
-        created_by: null,
-        client_name: clientName || null,
-        status: 'NOUVELLE',
-        special_instructions: specialInstructions || null,
-        order_type: 'SUR_PLACE',
-        total_amount: totalAmount,
-        created_at: newOrder.createdAt,
-      });
-      if (orderError) {
-        addNotification(`Commande non synchronisée avec Supabase : ${orderError.message}`, 'error');
-        return;
-      }
-      const { error: itemsError } = await supabase.from('order_items').insert(orderItems.map(item => ({
-        id: item.id,
-        order_id: newOrder.id,
-        product_id: item.productId,
-        product_name: item.productName,
-        unit_price: item.unitPrice,
-        quantity: item.quantity,
-        notes: item.notes || null,
-        subtotal: item.subtotal,
-      })));
-      if (itemsError) addNotification(`Articles non synchronisés avec Supabase : ${itemsError.message}`, 'error');
-    })();
+    }
+    const { error: orderError } = await supabase.from('orders').insert({
+      id: newOrder.id,
+      order_number: orderNumber,
+      table_session_id: session!.id,
+      table_id: table.id,
+      created_by: null,
+      client_name: clientName || null,
+      status: 'NOUVELLE',
+      special_instructions: specialInstructions || null,
+      order_type: 'SUR_PLACE',
+      total_amount: totalAmount,
+      created_at: newOrder.createdAt,
+    });
+    if (orderError) throw new Error(`Commande non enregistrée dans Supabase : ${orderError.message}`);
+
+    const { error: itemsError } = await supabase.from('order_items').insert(orderItems.map(item => ({
+      id: item.id,
+      order_id: newOrder.id,
+      product_id: item.productId,
+      product_name: item.productName,
+      unit_price: item.unitPrice,
+      quantity: item.quantity,
+      notes: item.notes || null,
+      subtotal: item.subtotal,
+    })));
+    if (itemsError) throw new Error(`Articles non enregistrés dans Supabase : ${itemsError.message}`);
 
     // Update session orders & total
-    setTableSessions(prev => prev.map(s => {
+    setTableSessions(prev => sessionWasCreated
+      ? [{ ...session!, orderIds: [newOrder.id], totalAmount }, ...prev]
+      : prev.map(s => {
       if (s.id === sessionId) {
         return {
           ...s,
@@ -763,6 +909,7 @@ export const RestaurantProvider: React.FC<{ children: React.ReactNode }> = ({ ch
       }
       return s;
     }));
+    setOrders(prev => [newOrder, ...prev]);
 
     // Update table status to COMMANDE_EN_COURS
     setTables(prev => prev.map(t => {
@@ -791,46 +938,48 @@ export const RestaurantProvider: React.FC<{ children: React.ReactNode }> = ({ ch
       prepared_at: newStatus === 'PRETE' ? now : undefined,
       served_at: newStatus === 'SERVIE' ? now : undefined,
     }).eq('id', orderId).then(({ error }) => {
-      if (error) addNotification(`Statut non synchronisé avec Supabase : ${error.message}`, 'error');
-    });
-    setOrders(prev => prev.map(ord => {
-      if (ord.id === orderId) {
-        const oldStatus = ord.status;
-        const updated: Order = {
-          ...ord,
-          status: newStatus,
-          preparedAt: newStatus === 'PRETE' ? new Date().toISOString() : ord.preparedAt,
-          servedAt: newStatus === 'SERVIE' ? new Date().toISOString() : ord.servedAt,
-        };
-        logAudit('STATUT_COMMANDE', 'Order', orderId, oldStatus, newStatus, `Mise à jour état ${ord.orderNumber} (${ord.tableCode})`);
-        
-        if (newStatus === 'PRETE') {
-          addNotification(`La commande ${ord.orderNumber} (${ord.tableCode}) est PRÊTE à être servie !`, 'warning');
-          playNotificationSound('ready');
-        } else if (newStatus === 'ACCEPTEE') {
-          addNotification(`Commande ${ord.orderNumber} acceptée en cuisine.`, 'info');
-        }
-        return updated;
+      if (error) {
+        addNotification(`Statut non synchronisé avec Supabase : ${error.message}`, 'error');
+        return;
       }
-      return ord;
-    }));
+      setOrders(prev => prev.map(ord => {
+        if (ord.id === orderId) {
+          const oldStatus = ord.status;
+          const updated: Order = { ...ord, status: newStatus, preparedAt: newStatus === 'PRETE' ? now : ord.preparedAt, servedAt: newStatus === 'SERVIE' ? now : ord.servedAt };
+          logAudit('STATUT_COMMANDE', 'Order', orderId, oldStatus, newStatus, `Mise à jour état ${ord.orderNumber} (${ord.tableCode})`);
+          if (newStatus === 'PRETE') {
+            addNotification(`La commande ${ord.orderNumber} (${ord.tableCode}) est PRÊTE à être servie !`, 'warning');
+            playNotificationSound('ready');
+          } else if (newStatus === 'ACCEPTEE') {
+            addNotification(`Commande ${ord.orderNumber} acceptée en cuisine.`, 'info');
+          }
+          return updated;
+        }
+        return ord;
+      }));
+    });
   }, [logAudit, addNotification]);
 
   // Cancel order
   const cancelOrder = useCallback((orderId: string, reason?: string) => {
-    setOrders(prev => prev.map(ord => {
-      if (ord.id === orderId) {
-        logAudit('ANNULATION_COMMANDE', 'Order', orderId, ord.status, 'ANNULEE', reason || 'Annulation manuelle');
-        addNotification(`Commande ${ord.orderNumber} annulée.`, 'error');
-        return { ...ord, status: 'ANNULEE' };
+    void supabase.from('orders').update({ status: 'ANNULEE' }).eq('id', orderId).then(({ error }) => {
+      if (error) {
+        addNotification(`Annulation non enregistrée dans Supabase : ${error.message}`, 'error');
+        return;
       }
-      return ord;
-    }));
+      setOrders(prev => prev.map(order => {
+        if (order.id !== orderId) return order;
+        logAudit('ANNULATION_COMMANDE', 'Order', orderId, order.status, 'ANNULEE', reason || 'Annulation manuelle');
+        addNotification(`Commande ${order.orderNumber} annulée.`, 'error');
+        return { ...order, status: 'ANNULEE' };
+      }));
+    });
   }, [logAudit, addNotification]);
 
   // Open Table Session
-  const openTableSession = useCallback((tableId: string, customerCount: number, waiterName?: string): TableSession => {
+  const openTableSession = useCallback(async (tableId: string, customerCount: number, waiterName?: string): Promise<TableSession> => {
     const table = tables.find(t => t.id === tableId);
+    if (!table) throw new Error('Table introuvable.');
     const sessionId = 'sess-' + Date.now();
     const newSession: TableSession = {
       id: sessionId,
@@ -844,6 +993,20 @@ export const RestaurantProvider: React.FC<{ children: React.ReactNode }> = ({ ch
       waiterName: waiterName || 'Personnel Umoja',
       customerCount: customerCount || 2,
     };
+
+    const { error: sessionError } = await supabase.from('table_sessions').insert({
+      id: newSession.id,
+      table_id: tableId,
+      opened_by: currentUser?.auth_user_id || null,
+      opened_at: newSession.openedAt,
+      status: 'ACTIVE',
+      customer_count: newSession.customerCount,
+      total_amount: 0,
+      paid_amount: 0,
+    });
+    if (sessionError) throw new Error(`Session de table non enregistrée : ${sessionError.message}`);
+    const { error: tableError } = await supabase.from('restaurant_tables').update({ status: 'OCCUPEE', waiter_name: waiterName || table.waiterName || null }).eq('id', tableId);
+    if (tableError) throw new Error(`Statut de table non enregistré : ${tableError.message}`);
 
     setTableSessions(prev => [newSession, ...prev]);
     setTables(prev => prev.map(t => {
@@ -861,19 +1024,22 @@ export const RestaurantProvider: React.FC<{ children: React.ReactNode }> = ({ ch
     logAudit('OUVERTURE_TABLE', 'TableSession', sessionId, 'LIBRE', 'OCCUPEE', `Ouverture session ${table?.code}`);
     addNotification(`Session ouverte pour ${table?.code}`, 'info');
     return newSession;
-  }, [tables, logAudit, addNotification]);
+  }, [tables, currentUser, logAudit, addNotification]);
 
   // Update table status
   const updateTableStatus = useCallback((tableId: string, status: RestaurantTable['status']) => {
-    setTables(prev => prev.map(t => {
-      if (t.id === tableId) {
-        const oldStatus = t.status;
-        logAudit('STATUT_TABLE', 'RestaurantTable', tableId, oldStatus, status, `Changement statut ${t.code}`);
-        return { ...t, status };
+    void supabase.from('restaurant_tables').update({ status }).eq('id', tableId).then(({ error }) => {
+      if (error) {
+        addNotification(`Statut de table non synchronisé : ${error.message}`, 'error');
+        return;
       }
-      return t;
-    }));
-  }, [logAudit]);
+      setTables(prev => prev.map(table => {
+        if (table.id !== tableId) return table;
+        logAudit('STATUT_TABLE', 'RestaurantTable', tableId, table.status, status, `Changement statut ${table.code}`);
+        return { ...table, status };
+      }));
+    });
+  }, [logAudit, addNotification]);
 
   // Generate Invoice For Table Session (Grouped Orders)
   const generateInvoiceForTable = useCallback((tableId: string, cashierName: string, discountAmount = 0): Invoice | null => {
@@ -1163,6 +1329,40 @@ export const RestaurantProvider: React.FC<{ children: React.ReactNode }> = ({ ch
     }));
   }, [products, logAudit, addNotification]);
 
+  const addIngredient = useCallback(async (name: string, unit: string, unitCost: number): Promise<boolean> => {
+    const ingredient: Ingredient = { id: `ing-${Date.now()}`, name: name.trim(), unit: unit.trim() || 'unité', unitCost };
+    const { error } = await supabase.from('ingredients').insert({ id: ingredient.id, name: ingredient.name, unit: ingredient.unit, unit_cost: ingredient.unitCost });
+    if (error) {
+      addNotification(`Ingrédient non enregistré : ${error.message}`, 'error');
+      return false;
+    }
+    setIngredients(previous => [...previous, ingredient].sort((left, right) => left.name.localeCompare(right.name)));
+    logAudit('CREATION_INGREDIENT', 'Ingredient', ingredient.id, undefined, ingredient.name, `Coût unitaire : ${ingredient.unitCost}`);
+    return true;
+  }, [logAudit, addNotification]);
+
+  const setRecipeIngredient = useCallback(async (productId: string, ingredientId: string, quantity: number): Promise<boolean> => {
+    const existing = recipeIngredients.find(item => item.productId === productId && item.ingredientId === ingredientId);
+    const recipeIngredient: RecipeIngredient = { id: existing?.id || `recipe-ing-${Date.now()}`, productId, ingredientId, quantity };
+    const { error } = await supabase.from('recipe_ingredients').upsert({ id: recipeIngredient.id, product_id: productId, ingredient_id: ingredientId, quantity }, { onConflict: 'product_id,ingredient_id' });
+    if (error) {
+      addNotification(`Recette non enregistrée : ${error.message}`, 'error');
+      return false;
+    }
+    setRecipeIngredients(previous => existing ? previous.map(item => item.id === existing.id ? recipeIngredient : item) : [...previous, recipeIngredient]);
+    return true;
+  }, [recipeIngredients, addNotification]);
+
+  const removeRecipeIngredient = useCallback(async (recipeIngredientId: string): Promise<boolean> => {
+    const { error } = await supabase.from('recipe_ingredients').delete().eq('id', recipeIngredientId);
+    if (error) {
+      addNotification(`Élément de recette non supprimé : ${error.message}`, 'error');
+      return false;
+    }
+    setRecipeIngredients(previous => previous.filter(item => item.id !== recipeIngredientId));
+    return true;
+  }, [addNotification]);
+
   const addCategory = useCallback((cat: Omit<Category, 'id'>) => {
     const newCat: Category = {
       ...cat,
@@ -1277,25 +1477,15 @@ export const RestaurantProvider: React.FC<{ children: React.ReactNode }> = ({ ch
     });
   }, [logAudit, addNotification]);
 
-  // Attendance Clocking with Strict Delay Calculation & Official Photo
-  const clockAttendance = useCallback((
-    matricule: string,
+  // Attendance is tied to the authenticated employee; no employee identifier is accepted from the UI.
+  const clockCurrentUserAttendance = useCallback(async (
     pin: string,
     type: AttendanceType
-  ): { success: boolean; message: string; record?: AttendanceRecord; employee?: Employee } => {
-    const emp = employees.find(e => e.matricule.trim().toUpperCase() === matricule.trim().toUpperCase());
-    
-    if (!emp) {
-      return { success: false, message: 'Matricule introuvable. Veuillez vérifier votre identifiant.' };
-    }
-
-    if (emp.pin !== pin) {
-      return { success: false, message: 'Code PIN incorrect.' };
-    }
-
-    if (emp.statut !== 'ACTIF') {
-      return { success: false, message: `Cet employé est actuellement ${emp.statut}. Pointage refusé.` };
-    }
+  ): Promise<{ success: boolean; message: string; record?: AttendanceRecord }> => {
+    const emp = currentUser;
+    if (!emp?.auth_user_id) return { success: false, message: 'Votre profil employé sécurisé est indisponible. Contactez l’administration.' };
+    if (emp.pin !== pin) return { success: false, message: 'Code PIN incorrect.' };
+    if (emp.statut !== 'ACTIF') return { success: false, message: `Votre compte est actuellement ${emp.statut}. Pointage refusé.` };
 
     const now = new Date();
     const dateStr = now.toISOString().split('T')[0];
@@ -1334,8 +1524,7 @@ export const RestaurantProvider: React.FC<{ children: React.ReactNode }> = ({ ch
       status,
     };
 
-    setAttendanceRecords(prev => [record, ...prev]);
-    void supabase.from('attendance_records').insert({
+    const { error } = await supabase.from('attendance_records').insert({
       id: record.id,
       employee_id: record.employeeId,
       recorded_by: currentUser?.auth_user_id || null,
@@ -1344,9 +1533,11 @@ export const RestaurantProvider: React.FC<{ children: React.ReactNode }> = ({ ch
       type: record.type,
       status: record.status,
       delay_minutes: record.delayMinutes,
-    }).then(({ error }) => {
-      if (error) addNotification(`Pointage non enregistré dans Supabase : ${error.message}`, 'error');
+      validation_method: 'PIN',
     });
+    if (error) return { success: false, message: `Pointage non enregistré dans Supabase : ${error.message}` };
+
+    setAttendanceRecords(prev => [record, ...prev]);
 
     const typeLabels: Record<AttendanceType, string> = {
       ENTREE: 'Arrivée / Prise de poste',
@@ -1365,8 +1556,8 @@ export const RestaurantProvider: React.FC<{ children: React.ReactNode }> = ({ ch
     addNotification(msg, status === 'RETARD' ? 'warning' : 'success');
     playNotificationSound('success');
 
-    return { success: true, message: msg, record, employee: emp };
-  }, [employees, logAudit, addNotification]);
+    return { success: true, message: msg, record };
+  }, [currentUser, logAudit, addNotification]);
 
   // Correct Attendance (Admin only with justification)
   const correctAttendance = useCallback((recordId: string, newStatus: AttendanceStatus, reason: string, adminName: string) => {
@@ -1384,39 +1575,37 @@ export const RestaurantProvider: React.FC<{ children: React.ReactNode }> = ({ ch
   }, [attendanceRecords, currentUser, logAudit, addNotification]);
 
   // Expense Management
-  const recordExpense = useCallback((data: Omit<Expense, 'id' | 'createdAt'>) => {
+  const recordExpense = useCallback(async (data: Omit<Expense, 'id' | 'createdAt'>): Promise<boolean> => {
     const newExpense: Expense = {
       ...data,
       id: 'exp-' + Date.now(),
       createdAt: new Date().toISOString(),
     };
 
-    void supabase.from('expenses').insert({ id: newExpense.id, category: newExpense.category, description: newExpense.description, amount: newExpense.amount, payment_method: newExpense.paymentMethod, supplier: newExpense.supplier || null, reference: newExpense.reference || null, recorded_by: currentUser?.auth_user_id || null, created_at: newExpense.createdAt, expense_date: newExpense.date }).then(({ error }) => {
-      if (error) {
-        addNotification(`Dépense non enregistrée dans Supabase : ${error.message}`, 'error');
-        return;
-      }
-      setExpenses(prev => [newExpense, ...prev]);
+    const { error } = await supabase.from('expenses').insert({ id: newExpense.id, service: newExpense.service, category: newExpense.category, item_name: newExpense.itemName || null, quantity: newExpense.quantity || null, description: newExpense.description, amount: newExpense.amount, payment_method: newExpense.paymentMethod, supplier: newExpense.supplier || null, reference: newExpense.reference || null, recorded_by: currentUser?.auth_user_id || null, created_at: newExpense.createdAt, expense_date: newExpense.date });
+    if (error) {
+      addNotification(`Dépense non enregistrée dans Supabase : ${error.message}`, 'error');
+      return false;
+    }
+    setExpenses(prev => [newExpense, ...prev]);
 
-      if (data.paymentMethod === 'ESPECES') {
-        setCashRegister(prev => {
-          const updatedExpenses = prev.totalExpenses + data.amount;
-          return { ...prev, totalExpenses: updatedExpenses, theoreticalBalance: prev.openingBalance + prev.totalSalesCash - updatedExpenses };
-        });
-      }
+    if (data.paymentMethod === 'ESPECES') {
+      setCashRegister(prev => {
+        const updatedExpenses = prev.totalExpenses + data.amount;
+        return { ...prev, totalExpenses: updatedExpenses, theoreticalBalance: prev.openingBalance + prev.totalSalesCash - updatedExpenses };
+      });
+    }
 
-      logAudit('NOUVELLE_DEPENSE', 'Expense', newExpense.id, undefined, `${newExpense.amount} FC - ${newExpense.category}`, newExpense.description);
-      addNotification(`Dépense de ${newExpense.amount} FC enregistrée (${newExpense.category}).`, 'info');
-    });
-
-    // If expense is paid in cash, adjust active cash register theoretical balance
+    logAudit('NOUVELLE_DEPENSE', 'Expense', newExpense.id, undefined, `${newExpense.amount} FC - ${newExpense.category}`, newExpense.description);
+    addNotification(`Dépense de ${newExpense.amount} FC enregistrée (${newExpense.category}).`, 'info');
+    return true;
   }, [currentUser, logAudit, addNotification]);
 
   const updateExpense = useCallback((id: string, updates: Partial<Expense>) => {
     const existing = expenses.find(expense => expense.id === id);
     if (!existing) return;
     const updated = { ...existing, ...updates };
-    void supabase.from('expenses').update({ category: updated.category, description: updated.description, amount: updated.amount, payment_method: updated.paymentMethod, supplier: updated.supplier || null, reference: updated.reference || null, expense_date: updated.date }).eq('id', id).then(({ error }) => {
+    void supabase.from('expenses').update({ category: updated.category, item_name: updated.itemName || null, quantity: updated.quantity || null, description: updated.description, amount: updated.amount, payment_method: updated.paymentMethod, supplier: updated.supplier || null, reference: updated.reference || null, expense_date: updated.date }).eq('id', id).then(({ error }) => {
       if (error) {
         addNotification(`Dépense non modifiée dans Supabase : ${error.message}`, 'error');
         return;
@@ -1544,6 +1733,8 @@ export const RestaurantProvider: React.FC<{ children: React.ReactNode }> = ({ ch
         restaurantInfo,
         categories,
         products,
+        ingredients,
+        recipeIngredients,
         tables,
         orders,
         tableSessions,
@@ -1582,6 +1773,9 @@ export const RestaurantProvider: React.FC<{ children: React.ReactNode }> = ({ ch
         updateProduct,
         deleteProduct,
         toggleProductAvailability,
+        addIngredient,
+        setRecipeIngredient,
+        removeRecipeIngredient,
         addCategory,
         updateCategory,
         deleteCategory,
@@ -1590,7 +1784,7 @@ export const RestaurantProvider: React.FC<{ children: React.ReactNode }> = ({ ch
         createStaffAccount,
         updateEmployee,
         deleteEmployee,
-        clockAttendance,
+        clockCurrentUserAttendance,
         correctAttendance,
 
         recordExpense,

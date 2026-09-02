@@ -4,6 +4,7 @@ import { RestaurantTable, Invoice, TableSession } from '../../types';
 import { formatFC, formatDateTime, formatTimeOnly } from '../../utils/formatters';
 import { InvoiceModal } from './InvoiceModal';
 import { PaymentModal } from './PaymentModal';
+import { ServiceExpensePanel } from '../common/ServiceExpensePanel';
 import { 
   CreditCard, 
   Utensils, 
@@ -126,7 +127,7 @@ export const CashierPosView: React.FC = () => {
     <div className="min-h-[calc(100vh-4rem)] bg-stone-950 text-stone-100 p-4 sm:p-6 space-y-6">
       
       {/* Top Metrics Cards */}
-      <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
+      <div className="grid grid-cols-1 min-[380px]:grid-cols-2 lg:grid-cols-4 gap-4">
         
         <div className="bg-stone-900 border border-stone-800 rounded-2xl p-4 shadow-lg">
           <div className="flex items-center justify-between">
@@ -182,6 +183,8 @@ export const CashierPosView: React.FC = () => {
 
       </div>
 
+      <ServiceExpensePanel service="CAISSE" title="Caisse" />
+
       {/* Main Content: Tables Floor Plan & Inspector */}
       <div className="grid grid-cols-1 lg:grid-cols-12 gap-6">
         
@@ -199,7 +202,7 @@ export const CashierPosView: React.FC = () => {
             </div>
 
             {/* Zone Filter Tabs */}
-            <div className="flex items-center gap-1.5 bg-stone-950 p-1 rounded-xl border border-stone-800">
+            <div className="flex max-w-full items-center gap-1.5 overflow-x-auto bg-stone-950 p-1 rounded-xl border border-stone-800">
               <button
                 onClick={() => setSelectedZone('ALL')}
                 className={`px-3 py-1 rounded-lg text-xs font-semibold transition ${

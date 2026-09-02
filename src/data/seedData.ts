@@ -750,6 +750,7 @@ export const initialExpenses: Expense[] = [
   {
     id: 'exp-01',
     date: new Date().toISOString().split('T')[0],
+    service: 'ADMINISTRATION',
     category: 'Alimentation & Marché',
     description: 'Achat de viandes fraîches et poulets fermiers au marché central de la Gombe',
     amount: 320000,
@@ -762,6 +763,7 @@ export const initialExpenses: Expense[] = [
   {
     id: 'exp-02',
     date: new Date().toISOString().split('T')[0],
+    service: 'ADMINISTRATION',
     category: 'Boissons & Brasserie',
     description: 'Réapprovisionnement casiers Primus, Skol, Vitalo et Swissta',
     amount: 180000,
@@ -774,6 +776,7 @@ export const initialExpenses: Expense[] = [
   {
     id: 'exp-03',
     date: new Date().toISOString().split('T')[0],
+    service: 'ADMINISTRATION',
     category: 'Gaz de Cuisine',
     description: 'Recharge 2 bouteilles de gaz 38kg pour les fourneaux de cuisine',
     amount: 95000,
@@ -786,6 +789,7 @@ export const initialExpenses: Expense[] = [
   {
     id: 'exp-04',
     date: new Date().toISOString().split('T')[0],
+    service: 'ADMINISTRATION',
     category: 'Transport & Logistique',
     description: 'Courses approvisionnement légumes frais & Fumbwa',
     amount: 25000,

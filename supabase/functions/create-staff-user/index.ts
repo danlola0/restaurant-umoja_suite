@@ -75,6 +75,16 @@ Deno.serve(async (request) => {
       throw new Error(employeeError.message);
     }
 
+    const { error: auditError } = await adminClient.from('audit_logs').insert({
+      user_id: caller.id,
+      action: 'CREATION_EMPLOYE',
+      target_entity: 'Employee',
+      target_id: employeeId,
+      new_value: { matricule, role, email },
+      details: `Compte et profil créés pour ${employee.prenom} ${employee.nom}.`,
+    });
+    if (auditError) console.error('Audit creation employee failed:', auditError.message);
+
     return new Response(JSON.stringify({ success: true, employeeId, matricule }), { headers: { ...corsHeaders, 'Content-Type': 'application/json' } });
   } catch (error) {
     return new Response(JSON.stringify({ error: error instanceof Error ? error.message : 'Erreur serveur.' }), { status: 400, headers: { ...corsHeaders, 'Content-Type': 'application/json' } });

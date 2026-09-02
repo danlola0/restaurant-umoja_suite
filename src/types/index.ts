@@ -93,6 +93,21 @@ export interface Product {
   tags?: string[];
 }
 
+export interface Ingredient {
+  id: string;
+  name: string;
+  unit: string;
+  unitCost: number;
+  lastExpenseId?: string;
+}
+
+export interface RecipeIngredient {
+  id: string;
+  productId: string;
+  ingredientId: string;
+  quantity: number;
+}
+
 export type TableStatus = 'LIBRE' | 'OCCUPEE' | 'COMMANDE_EN_COURS' | 'A_PAYER' | 'NETTOYAGE';
 
 export type TableZone = 'Salle Principale' | 'Terrasse' | 'Salon VIP' | 'Jardin' | 'Bar';
@@ -211,7 +226,10 @@ export interface ExpenseCategory {
 export interface Expense {
   id: string;
   date: string; // YYYY-MM-DD
+  service: 'CUISINE' | 'CAISSE' | 'ADMINISTRATION';
   category: string;
+  itemName?: string;
+  quantity?: number;
   description: string;
   amount: number; // in CNY
   paymentMethod: PaymentMethod;
