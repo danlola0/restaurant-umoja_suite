@@ -37,6 +37,7 @@ export const PaymentModal: React.FC<PaymentModalProps> = ({
   const [note, setNote] = useState<string>('');
   const [isSubmitting, setIsSubmitting] = useState<boolean>(false);
   const [cashTendered, setCashTendered] = useState<number>(invoice.remainingAmount);
+  const [qrConfirmed, setQrConfirmed] = useState(false);
 
   const paymentMethods: { id: PaymentMethod; label: string; icon: React.FC<{ className?: string }>; color: string }[] = [
     { id: 'ESPECES', label: 'Espèces (CNY)', icon: Banknote, color: 'text-emerald-400 border-emerald-500/40 bg-emerald-950/20' },
@@ -45,6 +46,7 @@ export const PaymentModal: React.FC<PaymentModalProps> = ({
     { id: 'ORANGE_MONEY', label: 'Orange Money', icon: Smartphone, color: 'text-orange-400 border-orange-500/40 bg-orange-950/20' },
     { id: 'CARTE', label: 'Carte Bancaire / TPE', icon: CreditCard, color: 'text-sky-400 border-sky-500/40 bg-sky-950/20' },
     { id: 'BANQUE', label: 'Virement / Chèque', icon: Building2, color: 'text-indigo-400 border-indigo-500/40 bg-indigo-950/20' },
+    { id: 'QR_CODE', label: 'QR Code Umoja', icon: Smartphone, color: 'text-amber-400 border-amber-500/40 bg-amber-950/20' },
   ];
 
   const quickDenominations = [
@@ -57,13 +59,14 @@ export const PaymentModal: React.FC<PaymentModalProps> = ({
 
   const changeToReturn = selectedMethod === 'ESPECES' ? Math.max(0, cashTendered - invoice.remainingAmount) : 0;
 
-  const handleSubmit = (e: React.FormEvent) => {
+  const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     if (amountPaid <= 0) return;
+    if (selectedMethod === 'QR_CODE' && !qrConfirmed) return;
 
     setIsSubmitting(true);
     try {
-      const result = recordPayment(
+      const result = await recordPayment(
         invoice.id,
         amountPaid,
         selectedMethod,
@@ -71,6 +74,7 @@ export const PaymentModal: React.FC<PaymentModalProps> = ({
         note.trim() || undefined
       );
 
+      if (!result.success) return;
       if (result.isFullyPaid) {
         confetti({
           particleCount: 50,
@@ -131,7 +135,7 @@ export const PaymentModal: React.FC<PaymentModalProps> = ({
                   <button
                     key={m.id}
                     type="button"
-                    onClick={() => setSelectedMethod(m.id)}
+                    onClick={() => { setSelectedMethod(m.id); setQrConfirmed(false); }}
                     className={`flex flex-col items-start p-2.5 rounded-xl border text-xs text-left transition ${
                       isSelected
                         ? 'border-amber-500 bg-amber-500/20 text-amber-300 font-bold ring-1 ring-amber-500'
@@ -200,6 +204,22 @@ export const PaymentModal: React.FC<PaymentModalProps> = ({
             </div>
           )}
 
+          {selectedMethod === 'QR_CODE' && (
+            <div className="rounded-xl border border-amber-500/40 bg-amber-950/20 p-4 text-center">
+              <p className="text-xs font-bold text-amber-300">Scanner pour régler {formatFC(invoice.remainingAmount)}</p>
+              <img
+                src={`https://api.qrserver.com/v1/create-qr-code/?size=220x220&data=${encodeURIComponent(`UMOJA|${invoice.invoiceNumber}|${invoice.remainingAmount}`)}`}
+                alt="QR Code de paiement Umoja"
+                className="mx-auto my-3 h-40 w-40 rounded-lg bg-white p-2"
+              />
+              <p className="text-[11px] text-stone-400">Après vérification du paiement sur votre canal Umoja, confirmez manuellement.</p>
+              <label className="mt-3 flex cursor-pointer items-center justify-center gap-2 text-xs font-bold text-stone-200">
+                <input type="checkbox" checked={qrConfirmed} onChange={event => setQrConfirmed(event.target.checked)} className="h-4 w-4 accent-amber-500" />
+                Paiement QR vérifié par le caissier
+              </label>
+            </div>
+          )}
+
           {/* Amount Paid input for partial payments or non-cash */}
           <div>
             <label className="text-xs font-bold text-stone-300 block mb-1">
@@ -255,11 +275,11 @@ export const PaymentModal: React.FC<PaymentModalProps> = ({
 
             <button
               type="submit"
-              disabled={isSubmitting || amountPaid <= 0}
+              disabled={isSubmitting || amountPaid <= 0 || (selectedMethod === 'QR_CODE' && !qrConfirmed)}
               className="flex-1 py-3 px-4 rounded-xl font-bold text-xs bg-gradient-to-r from-emerald-500 to-emerald-600 hover:from-emerald-400 hover:to-emerald-500 text-white transition shadow-lg shadow-emerald-950/50 flex items-center justify-center gap-2 disabled:opacity-50"
             >
               <CheckCircle2 className="w-4 h-4" />
-              Valider le Règlement de {formatFC(amountPaid)}
+              {selectedMethod === 'QR_CODE' ? 'Confirmer le paiement QR' : `Valider le Règlement de ${formatFC(amountPaid)}`}
             </button>
           </div>
 

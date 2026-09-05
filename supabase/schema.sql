@@ -168,6 +168,19 @@ create table if not exists public.attendance_records (
   created_at timestamptz not null default now()
 );
 
+create table if not exists public.work_rules (
+  id boolean primary key default true check (id),
+  work_start time not null default '08:00',
+  work_end time not null default '17:00',
+  regular_hours_per_day numeric(5, 2) not null default 8 check (regular_hours_per_day > 0),
+  late_after_minutes integer not null default 5 check (late_after_minutes >= 0),
+  overtime_after_hours numeric(5, 2) not null default 8 check (overtime_after_hours >= 0),
+  updated_at timestamptz not null default now(),
+  updated_by uuid references public.profiles(id) on delete set null
+);
+
+insert into public.work_rules (id) values (true) on conflict (id) do nothing;
+
 alter table public.attendance_records add column if not exists validation_method text not null default 'PIN'
   check (validation_method in ('PIN', 'WEBAUTHN_PASSKEY'));
 
@@ -385,6 +398,7 @@ alter table public.order_items enable row level security;
 alter table public.invoices enable row level security;
 alter table public.payments enable row level security;
 alter table public.attendance_records enable row level security;
+alter table public.work_rules enable row level security;
 alter table public.webauthn_credentials enable row level security;
 alter table public.webauthn_challenges enable row level security;
 alter table public.expenses enable row level security;
@@ -426,6 +440,7 @@ drop policy if exists payments_cashier_write on public.payments;
 drop policy if exists attendance_self_read on public.attendance_records;
 drop policy if exists attendance_self_insert on public.attendance_records;
 drop policy if exists attendance_manager_update on public.attendance_records;
+drop policy if exists work_rules_admin_all on public.work_rules;
 drop policy if exists expenses_manager_read on public.expenses;
 drop policy if exists expenses_manager_write on public.expenses;
 drop policy if exists expenses_service_read on public.expenses;
@@ -483,6 +498,7 @@ create policy payments_cashier_write on public.payments for all using (public.ha
 create policy attendance_self_read on public.attendance_records for select using (exists (select 1 from public.employees where employees.id = employee_id and employees.auth_user_id = auth.uid()) or public.has_role(array['ADMINISTRATEUR', 'RESPONSABLE']));
 create policy attendance_self_insert on public.attendance_records for insert with check (exists (select 1 from public.employees where employees.id = employee_id and employees.auth_user_id = auth.uid()) or public.has_role(array['ADMINISTRATEUR', 'RESPONSABLE']));
 create policy attendance_manager_update on public.attendance_records for update using (public.has_role(array['ADMINISTRATEUR', 'RESPONSABLE'])) with check (public.has_role(array['ADMINISTRATEUR', 'RESPONSABLE']));
+create policy work_rules_admin_all on public.work_rules for all using (public.has_role(array['ADMINISTRATEUR', 'RESPONSABLE'])) with check (public.has_role(array['ADMINISTRATEUR', 'RESPONSABLE']));
 
 create policy expenses_service_read on public.expenses for select using (
   public.has_role(array['ADMINISTRATEUR', 'RESPONSABLE'])

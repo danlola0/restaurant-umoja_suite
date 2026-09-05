@@ -122,7 +122,11 @@ const AppContent: React.FC = () => {
         onAuthenticated={(role) => {
           const destination = role === 'ADMINISTRATEUR' || role === 'RESPONSABLE'
             ? '/admin/dashboard'
-            : role === 'CAISSIER' || role === 'CUISINE' || role === 'SERVEUR' || role === 'EMPLOYE' || role === 'POINTAGE'
+            : role === 'CAISSIER'
+              ? '/cashier/dashboard'
+              : role === 'CUISINE'
+                ? '/kitchen/dashboard'
+                : role === 'SERVEUR' || role === 'EMPLOYE' || role === 'POINTAGE'
                   ? '/staff/dashboard'
                   : '/menu';
           goTo(destination);

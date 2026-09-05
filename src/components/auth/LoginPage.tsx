@@ -9,7 +9,9 @@ interface LoginPageProps {
 
 const destinationForRole = (role: UserRole): string => {
   if (role === 'ADMINISTRATEUR' || role === 'RESPONSABLE') return '/admin/dashboard';
-  if (role === 'CAISSIER' || role === 'CUISINE' || role === 'SERVEUR' || role === 'EMPLOYE' || role === 'POINTAGE') return '/staff/dashboard';
+  if (role === 'CAISSIER') return '/cashier/dashboard';
+  if (role === 'CUISINE') return '/kitchen/dashboard';
+  if (role === 'SERVEUR' || role === 'EMPLOYE' || role === 'POINTAGE') return '/staff/dashboard';
   return '/menu';
 };
 
@@ -27,7 +29,7 @@ export const LoginPage: React.FC<LoginPageProps> = ({ onNavigate }) => {
 
     const result = await signIn(email.trim(), password);
     if (!result.success || !result.role) {
-      setErrorMessage('Identifiants invalides ou compte sans rôle autorisé.');
+      setErrorMessage('Adresse email ou mot de passe incorrect. Veuillez réessayer.');
       setIsSubmitting(false);
       return;
     }

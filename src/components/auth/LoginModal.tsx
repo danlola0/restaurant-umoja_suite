@@ -35,7 +35,7 @@ export const LoginModal: React.FC<LoginModalProps> = ({ isOpen, onClose, onAuthe
 
     const result = await signIn(email.trim(), pinInput);
     if (!result.success) {
-      setErrorMsg('Connexion refusée. Vérifiez votre email et votre mot de passe.');
+      setErrorMsg('Adresse email ou mot de passe incorrect. Veuillez réessayer.');
       return;
     }
 

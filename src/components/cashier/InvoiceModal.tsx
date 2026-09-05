@@ -71,6 +71,7 @@ export const InvoiceModal: React.FC<InvoiceModalProps> = ({
           
           {/* Restaurant Header */}
           <div className="text-center space-y-1 pb-3 border-b border-dashed border-stone-700">
+            <div className="mx-auto flex h-9 w-9 items-center justify-center rounded-lg bg-amber-500 text-lg font-black text-stone-950">U</div>
             <h2 className="text-base font-black text-amber-400 tracking-wider uppercase">
               {restaurantInfo.name}
             </h2>

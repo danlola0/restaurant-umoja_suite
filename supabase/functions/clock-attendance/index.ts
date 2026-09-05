@@ -38,13 +38,17 @@ Deno.serve(async request => {
       Deno.env.get('SUPABASE_URL')!,
       Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!,
     );
-    const { data: employee, error: employeeError } = await adminClient
+    const [{ data: employee, error: employeeError }, { data: workRules, error: rulesError }] = await Promise.all([
+      adminClient
       .from('employees')
       .select('id, matricule, pin, statut, scheduled_shift_start')
       .ilike('matricule', matricule.trim())
-      .maybeSingle();
+      .maybeSingle(),
+      adminClient.from('work_rules').select('work_start, late_after_minutes').eq('id', true).maybeSingle(),
+    ]);
 
     if (employeeError) throw new Error(employeeError.message);
+    if (rulesError) throw new Error(rulesError.message);
     if (!employee || employee.statut !== 'ACTIF' || employee.pin !== pin) {
       return new Response(JSON.stringify({ success: false, error: 'Matricule ou code PIN incorrect.' }), {
         status: 401,
@@ -53,9 +57,10 @@ Deno.serve(async request => {
     }
 
     const now = getLocalParts();
-    const [hour, minute] = String(employee.scheduled_shift_start || '08:00').slice(0, 5).split(':').map(Number);
+    const [hour, minute] = String(workRules?.work_start || employee.scheduled_shift_start || '08:00').slice(0, 5).split(':').map(Number);
     const scheduledMinutes = hour * 60 + minute;
-    const delayMinutes = type === 'ENTREE' && now.minutes > scheduledMinutes + 5 ? now.minutes - scheduledMinutes : 0;
+    const lateAfterMinutes = workRules?.late_after_minutes ?? 5;
+    const delayMinutes = type === 'ENTREE' && now.minutes > scheduledMinutes + lateAfterMinutes ? now.minutes - scheduledMinutes : 0;
     const status = delayMinutes > 0 ? 'RETARD' : 'PRESENT';
     const attendanceId = `att-${crypto.randomUUID()}`;
 

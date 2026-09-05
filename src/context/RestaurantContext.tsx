@@ -107,7 +107,7 @@ interface RestaurantContextType {
     method: PaymentMethod, 
     reference?: string, 
     note?: string
-  ) => { success: boolean; isFullyPaid: boolean; remaining: number };
+  ) => Promise<{ success: boolean; isFullyPaid: boolean; remaining: number }>;
 
   // Menu & Products
   addProduct: (product: Omit<Product, 'id'>) => Promise<void>;
@@ -427,6 +427,73 @@ export const RestaurantProvider: React.FC<{ children: React.ReactNode }> = ({ ch
       subscription.unsubscribe();
     };
   }, []);
+
+  useEffect(() => {
+    if (!authEmail || currentRole !== 'CAISSIER') return;
+    let mounted = true;
+
+    const loadCashierData = async () => {
+      const [invoicesResult, paymentsResult, expensesResult, sessionsResult] = await Promise.all([
+        supabase.from('invoices').select('*').order('created_at', { ascending: false }),
+        supabase.from('payments').select('*').order('created_at', { ascending: false }),
+        supabase.from('expenses').select('*').order('expense_date', { ascending: false }),
+        supabase.from('cash_register_sessions').select('*').order('opened_at', { ascending: false }).limit(1),
+      ]);
+      if (!mounted) return;
+      const error = invoicesResult.error || paymentsResult.error || expensesResult.error || sessionsResult.error;
+      if (error) {
+        console.error(`Données de caisse non chargées : ${error.message}`);
+        return;
+      }
+
+      const invoicesFromDatabase: Invoice[] = (invoicesResult.data || []).map((row: any) => {
+        const orderIds = row.order_ids || [];
+        const items = orders.filter(order => orderIds.includes(order.id)).flatMap(order => order.items).reduce<Invoice['items']>((grouped, item) => {
+          const existing = grouped.find(group => group.productName === item.productName && group.unitPrice === item.unitPrice);
+          if (existing) {
+            existing.quantity += item.quantity;
+            existing.subtotal += item.subtotal;
+          } else grouped.push({ productName: item.productName, quantity: item.quantity, unitPrice: item.unitPrice, subtotal: item.subtotal });
+          return grouped;
+        }, []);
+        return { id: row.id, invoiceNumber: row.invoice_number, sessionId: row.table_session_id || '', tableId: row.table_id || '', tableCode: row.table_code || '', orderIds, items, subtotal: Number(row.subtotal), discountAmount: Number(row.discount_amount), taxAmount: Number(row.tax_amount), totalAmount: Number(row.total_amount), paidAmount: Number(row.paid_amount), remainingAmount: Math.max(0, Number(row.total_amount) - Number(row.paid_amount)), status: row.status, createdAt: row.created_at, paidAt: row.paid_at || undefined, cashierName: row.cashier_name || '', paymentMethod: row.payment_method || undefined, paymentReference: row.payment_reference || undefined };
+      });
+      const paymentsFromDatabase: PaymentTransaction[] = (paymentsResult.data || []).map((row: any) => {
+        const invoice = invoicesFromDatabase.find(item => item.id === row.invoice_id);
+        return { id: row.id, invoiceId: row.invoice_id, tableId: invoice?.tableId || '', tableCode: invoice?.tableCode || '', amount: Number(row.amount), paymentMethod: row.payment_method, reference: row.reference || undefined, note: row.note || undefined, createdAt: row.created_at, cashierName: invoice?.cashierName || 'Caissier' };
+      });
+      setInvoices(invoicesFromDatabase);
+      setPaymentTransactions(paymentsFromDatabase);
+
+      const today = new Date().toISOString().slice(0, 10);
+      const paymentsToday = paymentsFromDatabase.filter(payment => payment.createdAt.slice(0, 10) === today);
+      const salesFor = (methods: PaymentMethod[]) => paymentsToday.filter(payment => methods.includes(payment.paymentMethod)).reduce((sum, payment) => sum + payment.amount, 0);
+      const expensesToday = (expensesResult.data || []).filter((expense: any) => expense.expense_date === today && expense.payment_method === 'ESPECES').reduce((sum: number, expense: any) => sum + Number(expense.amount), 0);
+      const session = sessionsResult.data?.[0];
+      if (session) {
+        const cashSales = salesFor(['ESPECES']);
+        setCashRegister({ id: session.id, date: session.opened_at.slice(0, 10), openedAt: session.opened_at, openingBalance: Number(session.opening_balance), openedBy: session.opened_by || 'Caissier', status: session.status, closedAt: session.closed_at || undefined, closedBy: session.closed_by || undefined, totalSalesCash: cashSales, totalSalesMobile: salesFor(['M_PESA', 'AIRTEL_MONEY', 'ORANGE_MONEY', 'QR_CODE']), totalSalesCard: salesFor(['CARTE']), totalSalesBank: salesFor(['BANQUE']), totalExpenses: expensesToday, theoreticalBalance: Number(session.opening_balance) + cashSales - expensesToday, realBalance: session.real_balance === null ? undefined : Number(session.real_balance), variance: session.variance === null ? undefined : Number(session.variance), varianceReason: session.variance_reason || undefined, notes: session.notes || undefined });
+      } else {
+        setCashRegister({
+          id: 'cash-register-not-opened',
+          date: today,
+          openedAt: new Date().toISOString(),
+          openingBalance: 0,
+          openedBy: 'Non ouverte',
+          status: 'CLOSED',
+          totalSalesCash: 0,
+          totalSalesMobile: 0,
+          totalSalesCard: 0,
+          totalSalesBank: 0,
+          totalExpenses: 0,
+          theoreticalBalance: 0,
+        });
+      }
+    };
+
+    void loadCashierData();
+    return () => { mounted = false; };
+  }, [authEmail, currentRole, orders]);
 
   const signIn = useCallback(async (email: string, password: string) => {
     setAuthLoading(true);
@@ -1133,7 +1200,7 @@ export const RestaurantProvider: React.FC<{ children: React.ReactNode }> = ({ ch
   }, [tableSessions, orders, invoices.length, currentUser, logAudit, addNotification]);
 
   // Record Payment
-  const recordPayment = useCallback((
+  const recordPayment = useCallback(async (
     invoiceId: string,
     amountPaid: number,
     method: PaymentMethod,
@@ -1163,8 +1230,7 @@ export const RestaurantProvider: React.FC<{ children: React.ReactNode }> = ({ ch
       cashierName: currentUser ? `${currentUser.prenom} ${currentUser.nom}` : 'Caissière',
     };
 
-    setPaymentTransactions(prev => [transaction, ...prev]);
-    void supabase.from('payments').insert({
+    const { error: paymentError } = await supabase.from('payments').insert({
       id: transaction.id,
       invoice_id: invoiceId,
       amount: amountPaid,
@@ -1173,16 +1239,24 @@ export const RestaurantProvider: React.FC<{ children: React.ReactNode }> = ({ ch
       note: note || null,
       recorded_by: currentUser?.auth_user_id || null,
       created_at: transaction.createdAt,
-    }).then(({ error }) => {
-      if (error) addNotification(`Paiement non enregistré dans Supabase : ${error.message}`, 'error');
     });
-    void supabase.from('invoices').update({
+    if (paymentError) {
+      addNotification(`Paiement non enregistré dans Supabase : ${paymentError.message}`, 'error');
+      return { success: false, isFullyPaid: false, remaining: invoice.remainingAmount };
+    }
+    const { error: invoiceError } = await supabase.from('invoices').update({
       paid_amount: newPaidAmount,
       status: isFullyPaid ? 'PAYEE' : 'EN_ATTENTE',
       paid_at: isFullyPaid ? new Date().toISOString() : null,
       payment_method: method,
       payment_reference: reference || null,
     }).eq('id', invoiceId);
+    if (invoiceError) {
+      addNotification(`Facture non mise à jour dans Supabase : ${invoiceError.message}`, 'error');
+      return { success: false, isFullyPaid: false, remaining: invoice.remainingAmount };
+    }
+
+    setPaymentTransactions(prev => [transaction, ...prev]);
 
     // Update invoice
     setInvoices(prev => prev.map(inv => {
@@ -1450,19 +1524,29 @@ export const RestaurantProvider: React.FC<{ children: React.ReactNode }> = ({ ch
     addNotification(`Employé ${newEmp.prenom} ${newEmp.nom} (${matricule}) créé.`, 'success');
   }, [employees.length, logAudit, addNotification]);
 
-  const updateEmployee = useCallback((id: string, updates: Partial<Employee>) => {
+  const updateEmployee = useCallback(async (id: string, updates: Partial<Employee>) => {
     const existing = employees.find(employee => employee.id === id);
     if (!existing) return;
     const updated = { ...existing, ...updates };
-    void supabase.from('employees').update(employeeToSupabase(updated)).eq('id', id).then(({ error }) => {
-      if (error) {
-        addNotification(`Employé non modifié dans Supabase : ${error.message}`, 'error');
+    if (updates.role && updates.role !== existing.role) {
+      if (!existing.auth_user_id) {
+        addNotification('Rôle non modifié : cette fiche employé n’est liée à aucun compte de connexion Supabase.', 'error');
         return;
       }
-      setEmployees(prev => prev.map(employee => employee.id === id ? updated : employee));
-      logAudit('MODIFICATION_EMPLOYE', 'Employee', id, JSON.stringify(existing), JSON.stringify(updated), `Modification fiche de ${updated.prenom} ${updated.nom}`);
-      addNotification('Fiche employé mise à jour.', 'info');
-    });
+      const { data, error } = await supabase.functions.invoke('update-staff-role', { body: { employeeId: id, role: updates.role } });
+      if (error || !data?.success) {
+        addNotification(`Rôle non modifié dans Supabase : ${data?.error || error?.message || 'Erreur inconnue.'}`, 'error');
+        return;
+      }
+    }
+    const { error } = await supabase.from('employees').update(employeeToSupabase(updated)).eq('id', id);
+    if (error) {
+      addNotification(`Employé non modifié dans Supabase : ${error.message}`, 'error');
+      return;
+    }
+    setEmployees(prev => prev.map(employee => employee.id === id ? updated : employee));
+    logAudit('MODIFICATION_EMPLOYE', 'Employee', id, JSON.stringify(existing), JSON.stringify(updated), `Modification fiche de ${updated.prenom} ${updated.nom}`);
+    addNotification('Fiche employé mise à jour.', 'info');
   }, [employees, logAudit, addNotification]);
 
   const deleteEmployee = useCallback((id: string) => {

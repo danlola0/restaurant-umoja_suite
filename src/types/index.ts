@@ -174,6 +174,7 @@ export type PaymentMethod =
   | 'ORANGE_MONEY' 
   | 'BANQUE' 
   | 'CARTE' 
+  | 'QR_CODE'
   | 'AUTRE';
 
 export interface PaymentTransaction {
