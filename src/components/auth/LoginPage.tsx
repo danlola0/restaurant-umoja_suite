@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { ArrowRight, KeyRound, LockKeyhole, ShieldCheck, Utensils, X } from 'lucide-react';
+import { ArrowRight, KeyRound, LockKeyhole, ShieldCheck, Utensils, X, Eye, EyeOff } from 'lucide-react';
 import { UserRole } from '../../types';
 import { useRestaurant } from '../../context/RestaurantContext';
 
@@ -19,6 +19,7 @@ export const LoginPage: React.FC<LoginPageProps> = ({ onNavigate }) => {
   const { signIn } = useRestaurant();
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
+  const [showPassword, setShowPassword] = useState(false);
   const [errorMessage, setErrorMessage] = useState('');
   const [isSubmitting, setIsSubmitting] = useState(false);
 
@@ -56,7 +57,7 @@ export const LoginPage: React.FC<LoginPageProps> = ({ onNavigate }) => {
           </button>
         </div>
 
-        <form onSubmit={handleSubmit} className="p-6 space-y-5">
+        <form onSubmit={handleSubmit} autoComplete="off" className="p-6 space-y-5">
           <div className="flex items-start gap-3 p-3 rounded-xl bg-amber-500/10 border border-amber-500/30">
             <ShieldCheck className="w-5 h-5 text-amber-400 shrink-0" />
             <p className="text-xs text-stone-300">Votre rôle et vos autorisations sont déterminés automatiquement par votre compte.</p>
@@ -64,14 +65,22 @@ export const LoginPage: React.FC<LoginPageProps> = ({ onNavigate }) => {
 
           <div>
             <label htmlFor="login-email" className="block text-xs font-bold text-stone-300 mb-1.5">Adresse email</label>
-            <input id="login-email" type="email" required autoComplete="email" value={email} onChange={event => setEmail(event.target.value)} className="w-full bg-stone-950 border border-stone-700 rounded-xl px-3 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-amber-500" placeholder="nom@restaurant-umoja.cd" />
+            <input id="login-email" name="login-identifier" type="email" required autoComplete="off" value={email} onChange={event => setEmail(event.target.value)} className="w-full bg-stone-950 border border-stone-700 rounded-xl px-3 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-amber-500" placeholder="nom@restaurant-umoja.cd" />
           </div>
 
           <div>
             <label htmlFor="login-password" className="block text-xs font-bold text-stone-300 mb-1.5">Mot de passe</label>
             <div className="relative">
               <KeyRound className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-stone-500" />
-              <input id="login-password" type="password" required autoComplete="current-password" value={password} onChange={event => setPassword(event.target.value)} className="w-full bg-stone-950 border border-stone-700 rounded-xl pl-10 pr-3 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-amber-500" placeholder="Votre mot de passe" />
+              <input id="login-password" name="login-secret" type={showPassword ? 'text' : 'password'} required autoComplete="off" value={password} onChange={event => setPassword(event.target.value)} className="w-full bg-stone-950 border border-stone-700 rounded-xl pl-10 pr-10 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-amber-500" placeholder="Votre mot de passe" />
+              <button
+                type="button"
+                onClick={() => setShowPassword(!showPassword)}
+                className="absolute right-3 top-1/2 -translate-y-1/2 text-stone-500 hover:text-amber-400 transition"
+                aria-label={showPassword ? 'Masquer le mot de passe' : 'Afficher le mot de passe'}
+              >
+                {showPassword ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
+              </button>
             </div>
           </div>
 

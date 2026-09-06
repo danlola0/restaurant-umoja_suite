@@ -111,7 +111,7 @@ interface RestaurantContextType {
 
   // Menu & Products
   addProduct: (product: Omit<Product, 'id'>) => Promise<void>;
-  updateProduct: (id: string, updates: Partial<Product>) => Promise<void>;
+  updateProduct: (id: string, updates: Partial<Product>) => Promise<boolean>;
   deleteProduct: (id: string) => Promise<void>;
   toggleProductAvailability: (id: string) => Promise<void>;
   addIngredient: (name: string, unit: string, unitCost: number) => Promise<boolean>;
@@ -124,8 +124,8 @@ interface RestaurantContextType {
   // Staff & Attendance
   addEmployee: (emp: Omit<Employee, 'id' | 'matricule'>) => void;
   createStaffAccount: (data: { email: string; password: string; role: UserRole; employee: Omit<Employee, 'id' | 'matricule' | 'auth_user_id'> }) => Promise<{ success: boolean; message: string }>;
-  updateEmployee: (id: string, updates: Partial<Employee>) => void;
-  deleteEmployee: (id: string) => void;
+  updateEmployee: (id: string, updates: Partial<Employee>) => Promise<boolean>;
+  deleteEmployee: (id: string) => Promise<void>;
   clockCurrentUserAttendance: (
     pin: string,
     type: AttendanceType
@@ -344,9 +344,23 @@ export const RestaurantProvider: React.FC<{ children: React.ReactNode }> = ({ ch
     loadFromStorage('expenses', initialExpenses)
   );
 
-  const [cashRegister, setCashRegister] = useState<CashRegisterSession>(() => 
-    loadFromStorage('cashRegister', initialCashRegisterSession)
-  );
+  const [cashRegister, setCashRegister] = useState<CashRegisterSession>(() => {
+    const today = new Date().toISOString().slice(0, 10);
+    return {
+      id: 'cash-register-loading',
+      date: today,
+      openedAt: new Date().toISOString(),
+      openingBalance: 0,
+      openedBy: 'Chargement...',
+      status: 'CLOSED',
+      totalSalesCash: 0,
+      totalSalesMobile: 0,
+      totalSalesCard: 0,
+      totalSalesBank: 0,
+      totalExpenses: 0,
+      theoreticalBalance: 0,
+    };
+  });
 
   const [cashClosuresHistory, setCashClosuresHistory] = useState<CashRegisterSession[]>(() => 
     loadFromStorage('cashClosuresHistory', [])
@@ -429,7 +443,7 @@ export const RestaurantProvider: React.FC<{ children: React.ReactNode }> = ({ ch
   }, []);
 
   useEffect(() => {
-    if (!authEmail || currentRole !== 'CAISSIER') return;
+    if (!authEmail || !['CAISSIER', 'ADMINISTRATEUR', 'RESPONSABLE'].includes(currentRole)) return;
     let mounted = true;
 
     const loadCashierData = async () => {
@@ -519,6 +533,16 @@ export const RestaurantProvider: React.FC<{ children: React.ReactNode }> = ({ ch
 
   const signOut = useCallback(async () => {
     await supabase.auth.signOut();
+    // Purge les données sensibles conservées côté navigateur sur une machine partagée.
+    const sensitiveKeys = ['employees', 'attendanceRecords', 'expenses', 'invoices', 'paymentTransactions', 'cashRegister', 'cashClosuresHistory', 'auditLogs'];
+    sensitiveKeys.forEach(key => localStorage.removeItem(STORAGE_KEY_PREFIX + key));
+    sessionStorage.clear();
+    setCurrentRole('CLIENT');
+    setCurrentUser(null);
+    setAuthEmail(null);
+    addNotification('Vous avez été déconnecté avec succès.', 'success');
+    // Rechargement complet : aucun état React de la session précédente ne persiste.
+    window.location.assign('/menu');
   }, []);
 
   const createStaffAccount = useCallback(async (data: { email: string; password: string; role: UserRole; employee: Omit<Employee, 'id' | 'matricule' | 'auth_user_id'> }) => {
@@ -1353,14 +1377,14 @@ export const RestaurantProvider: React.FC<{ children: React.ReactNode }> = ({ ch
     addNotification(`Produit "${newProduct.name}" ajouté avec succès.`, 'success');
   }, [logAudit, addNotification]);
 
-  const updateProduct = useCallback(async (id: string, updates: Partial<Product>) => {
+  const updateProduct = useCallback(async (id: string, updates: Partial<Product>): Promise<boolean> => {
     const existing = products.find(product => product.id === id);
-    if (!existing) return;
+    if (!existing) return false;
     const updated = { ...existing, ...updates };
     const { error } = await supabase.from('products').update(productToSupabase(updated)).eq('id', id);
     if (error) {
       addNotification(`Produit non modifié dans Supabase : ${error.message}`, 'error');
-      return;
+      return false;
     }
     setProducts(prev => prev.map(p => {
       if (p.id === id) {
@@ -1370,6 +1394,7 @@ export const RestaurantProvider: React.FC<{ children: React.ReactNode }> = ({ ch
       return p;
     }));
     addNotification('Produit modifié avec succès.', 'info');
+    return true;
   }, [products, logAudit, addNotification]);
 
   const deleteProduct = useCallback(async (id: string) => {
@@ -1524,42 +1549,43 @@ export const RestaurantProvider: React.FC<{ children: React.ReactNode }> = ({ ch
     addNotification(`Employé ${newEmp.prenom} ${newEmp.nom} (${matricule}) créé.`, 'success');
   }, [employees.length, logAudit, addNotification]);
 
-  const updateEmployee = useCallback(async (id: string, updates: Partial<Employee>) => {
+  const updateEmployee = useCallback(async (id: string, updates: Partial<Employee>): Promise<boolean> => {
     const existing = employees.find(employee => employee.id === id);
-    if (!existing) return;
+    if (!existing) return false;
     const updated = { ...existing, ...updates };
     if (updates.role && updates.role !== existing.role) {
       if (!existing.auth_user_id) {
         addNotification('Rôle non modifié : cette fiche employé n’est liée à aucun compte de connexion Supabase.', 'error');
-        return;
+        return false;
       }
       const { data, error } = await supabase.functions.invoke('update-staff-role', { body: { employeeId: id, role: updates.role } });
       if (error || !data?.success) {
         addNotification(`Rôle non modifié dans Supabase : ${data?.error || error?.message || 'Erreur inconnue.'}`, 'error');
-        return;
+        return false;
       }
     }
     const { error } = await supabase.from('employees').update(employeeToSupabase(updated)).eq('id', id);
     if (error) {
       addNotification(`Employé non modifié dans Supabase : ${error.message}`, 'error');
-      return;
+      return false;
     }
     setEmployees(prev => prev.map(employee => employee.id === id ? updated : employee));
     logAudit('MODIFICATION_EMPLOYE', 'Employee', id, JSON.stringify(existing), JSON.stringify(updated), `Modification fiche de ${updated.prenom} ${updated.nom}`);
     addNotification('Fiche employé mise à jour.', 'info');
+    return true;
   }, [employees, logAudit, addNotification]);
 
-  const deleteEmployee = useCallback((id: string) => {
-    void supabase.from('employees').update({ statut: 'INACTIF' }).eq('id', id).then(({ error }) => {
-      if (error) {
-        addNotification(`Employé non désactivé dans Supabase : ${error.message}`, 'error');
-        return;
-      }
-      setEmployees(prev => prev.map(employee => employee.id === id ? { ...employee, statut: 'INACTIF' } : employee));
-      logAudit('DESACTIVATION_EMPLOYE', 'Employee', id, undefined, 'INACTIF', 'Employé désactivé');
-      addNotification('Employé désactivé.', 'warning');
-    });
-  }, [logAudit, addNotification]);
+  const deleteEmployee = useCallback(async (id: string) => {
+    const { data, error } = await supabase.functions.invoke('delete-staff-user', { body: { employeeId: id } });
+    if (error || !data?.success) {
+      addNotification(`Employé non supprimé : ${data?.error || error?.message || 'Erreur inconnue.'}`, 'error');
+      return;
+    }
+    setEmployees(prev => prev.filter(employee => employee.id !== id));
+    setAttendanceRecords(prev => prev.filter(record => record.employeeId !== id));
+    logAudit('SUPPRESSION_EMPLOYE', 'Employee', id, undefined, undefined, 'Employé et données associées supprimés');
+    addNotification('Employé supprimé avec succès de Supabase.', 'warning');
+  }, [addNotification]);
 
   // Attendance is tied to the authenticated employee; no employee identifier is accepted from the UI.
   const clockCurrentUserAttendance = useCallback(async (

@@ -68,7 +68,7 @@ export const LoginModal: React.FC<LoginModalProps> = ({ isOpen, onClose, onAuthe
           </button>
         </div>
 
-        <form onSubmit={handleLoginSubmit} className="p-6 space-y-5 overflow-y-auto">
+        <form onSubmit={handleLoginSubmit} autoComplete="off" className="p-6 space-y-5 overflow-y-auto">
           
           <div className="space-y-2">
             <label className="text-xs font-bold text-stone-300 block">
@@ -84,6 +84,8 @@ export const LoginModal: React.FC<LoginModalProps> = ({ isOpen, onClose, onAuthe
                 <input
                   type="email"
                   required
+                  autoComplete="off"
+                  name="login-identifier"
                   value={email}
                   onChange={(e) => setEmail(e.target.value)}
                   placeholder="employe@restaurant-umoja.cd"
@@ -100,6 +102,8 @@ export const LoginModal: React.FC<LoginModalProps> = ({ isOpen, onClose, onAuthe
                   <input
                     type="password"
                     required
+                    autoComplete="off"
+                    name="login-secret"
                     value={pinInput}
                     onChange={(e) => setPinInput(e.target.value)}
                     placeholder="••••"

@@ -17,7 +17,9 @@ import {
   Mail, 
   X, 
   CheckCircle2, 
-  UserCheck 
+  UserCheck,
+  Eye,
+  EyeOff
 } from 'lucide-react';
 
 export const StaffManager: React.FC = () => {
@@ -43,7 +45,9 @@ export const StaffManager: React.FC = () => {
   const videoRef = useRef<HTMLVideoElement>(null);
   const cameraStreamRef = useRef<MediaStream | null>(null);
   const [pin, setPin] = useState('1234');
+  const [showPin, setShowPin] = useState(false);
   const [accountPassword, setAccountPassword] = useState('');
+  const [showAccountPassword, setShowAccountPassword] = useState(false);
   const [accountError, setAccountError] = useState('');
   const [isCreatingAccount, setIsCreatingAccount] = useState(false);
 
@@ -171,7 +175,8 @@ export const StaffManager: React.FC = () => {
     }
 
     if (editingEmp) {
-      updateEmployee(editingEmp.id, {
+      setIsCreatingAccount(true);
+      const updated = await updateEmployee(editingEmp.id, {
         nom,
         prenom,
         role,
@@ -188,6 +193,8 @@ export const StaffManager: React.FC = () => {
         scheduledShiftStart,
         scheduledShiftEnd,
       });
+      setIsCreatingAccount(false);
+      if (!updated) return;
     } else {
       if (!email.trim() || accountPassword.length < 8) {
         setAccountError('Un email et un mot de passe d’au moins 8 caractères sont obligatoires.');
@@ -221,6 +228,7 @@ export const StaffManager: React.FC = () => {
         setAccountError(result.message);
         return;
       }
+      window.alert(`Employé enregistré avec succès et compte utilisateur créé.\n\n${result.message}\nEmail de connexion : ${email.trim()}\nPartagez ces identifiants à l'employé de façon sécurisée.`);
     }
     setIsModalOpen(false);
   };
@@ -420,8 +428,9 @@ export const StaffManager: React.FC = () => {
                   <input
                     type="number"
                     step={10000}
-                    value={salaireBase}
-                    onChange={(e) => setSalaireBase(Number(e.target.value))}
+                    value={salaireBase || ''}
+                    onChange={(e) => setSalaireBase(e.target.value === '' ? 0 : Number(e.target.value))}
+                    placeholder="Ex: 500000"
                     className="w-full bg-stone-950 border border-stone-700 rounded-lg p-2 text-xs font-mono font-bold text-amber-400 focus:outline-none focus:ring-1 focus:ring-amber-500"
                   />
                 </div>
@@ -435,7 +444,17 @@ export const StaffManager: React.FC = () => {
                   </div>
                   <div>
                     <label className="text-xs font-bold text-stone-300 block mb-1">Mot de passe initial *</label>
-                    <input type="password" required minLength={8} value={accountPassword} onChange={(e) => setAccountPassword(e.target.value)} placeholder="8 caractères minimum" className="w-full bg-stone-950 border border-stone-700 rounded-lg p-2 text-xs text-stone-200 focus:outline-none focus:ring-1 focus:ring-amber-500" />
+                    <div className="relative">
+                      <input type={showAccountPassword ? 'text' : 'password'} required minLength={8} value={accountPassword} onChange={(e) => setAccountPassword(e.target.value)} autoComplete="new-password" placeholder="8 caractères minimum" className="w-full bg-stone-950 border border-stone-700 rounded-lg p-2 pr-9 text-xs text-stone-200 focus:outline-none focus:ring-1 focus:ring-amber-500" />
+                      <button
+                        type="button"
+                        onClick={() => setShowAccountPassword(!showAccountPassword)}
+                        className="absolute right-2 top-1/2 -translate-y-1/2 text-stone-400 hover:text-amber-400 transition"
+                        aria-label={showAccountPassword ? 'Masquer le mot de passe' : 'Afficher le mot de passe'}
+                      >
+                        {showAccountPassword ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
+                      </button>
+                    </div>
                   </div>
                   <p className="col-span-2 text-[11px] text-amber-200/80">Le rôle sélectionné sera appliqué automatiquement au compte Supabase.</p>
                 </div>
@@ -446,13 +465,25 @@ export const StaffManager: React.FC = () => {
               <div className="grid grid-cols-3 gap-3">
                 <div>
                   <label className="text-xs font-bold text-stone-300 block mb-1">Code PIN (4 chiffres)</label>
-                  <input
-                    type="text"
-                    maxLength={4}
-                    value={pin}
-                    onChange={(e) => setPin(e.target.value)}
-                    className="w-full bg-stone-950 border border-stone-700 rounded-lg p-2 text-xs font-mono font-bold text-stone-200 focus:outline-none focus:ring-1 focus:ring-amber-500"
-                  />
+                  <div className="relative">
+                    <input
+                      type={showPin ? 'text' : 'password'}
+                      inputMode="numeric"
+                      maxLength={4}
+                      autoComplete="off"
+                      value={pin}
+                      onChange={(e) => setPin(e.target.value.replace(/\D/g, '').slice(0, 4))}
+                      className="w-full bg-stone-950 border border-stone-700 rounded-lg p-2 pr-9 text-xs font-mono font-bold text-stone-200 focus:outline-none focus:ring-1 focus:ring-amber-500"
+                    />
+                    <button
+                      type="button"
+                      onClick={() => setShowPin(!showPin)}
+                      className="absolute right-2 top-1/2 -translate-y-1/2 text-stone-400 hover:text-amber-400 transition"
+                      aria-label={showPin ? 'Masquer le code PIN' : 'Afficher le code PIN'}
+                    >
+                      {showPin ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
+                    </button>
+                  </div>
                 </div>
                 <div>
                   <label className="text-xs font-bold text-stone-300 block mb-1">Prise de service</label>

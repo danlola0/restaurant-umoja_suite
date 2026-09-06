@@ -108,7 +108,7 @@ export const MenuManager: React.FC = () => {
     }
 
     if (editingProduct) {
-      updateProduct(editingProduct.id, {
+      const updatedOk = await updateProduct(editingProduct.id, {
         name: formName,
         categoryId: formCategory,
         price: formPrice,
@@ -119,6 +119,8 @@ export const MenuManager: React.FC = () => {
         isRecommended: formIsRecommended,
         tags: tagsArray,
       });
+      if (!updatedOk) return;
+      window.alert(`Produit « ${formName} » modifié avec succès.`);
     } else {
       addProduct({
         name: formName,
@@ -394,10 +396,10 @@ export const MenuManager: React.FC = () => {
                   <input
                     type="number"
                     required
-                    min={100}
-                    step={500}
-                    value={formPrice}
-                    onChange={(e) => setFormPrice(Number(e.target.value))}
+                    min={1}
+                    step={1}
+                    value={formPrice || ''}
+                    onChange={(e) => setFormPrice(e.target.value === '' ? 0 : Number(e.target.value))}
                     className="w-full bg-stone-950 border border-stone-700 rounded-lg p-2 text-xs font-mono font-bold text-amber-400 focus:outline-none focus:ring-1 focus:ring-amber-500"
                   />
                 </div>
@@ -406,8 +408,8 @@ export const MenuManager: React.FC = () => {
                   <label className="text-xs font-bold text-stone-300 block mb-1">Temps prép. (min)</label>
                   <input
                     type="number"
-                    value={formPrepTime}
-                    onChange={(e) => setFormPrepTime(Number(e.target.value))}
+                    value={formPrepTime || ''}
+                    onChange={(e) => setFormPrepTime(e.target.value === '' ? 0 : Number(e.target.value))}
                     className="w-full bg-stone-950 border border-stone-700 rounded-lg p-2 text-xs text-stone-200 focus:outline-none focus:ring-1 focus:ring-amber-500"
                   />
                 </div>

@@ -24,7 +24,8 @@ export const ReportsManager: React.FC = () => {
     employees, 
     attendanceRecords, 
     cashRegister, 
-    products 
+    products,
+    currentUser
   } = useRestaurant();
 
   const [activeReportTab, setActiveReportTab] = useState<'FINANCIER' | 'VENTES' | 'RH' | 'CAISSE' | 'RENTABILITE'>('FINANCIER');
@@ -34,59 +35,79 @@ export const ReportsManager: React.FC = () => {
   const netMargin = totalRevenue - totalExpenses;
   const totalSalaries = employees.filter(e => e.statut === 'ACTIF').reduce((sum, e) => sum + (e.salaireBase || e.salaire || 0), 0);
 
-  // Export to CSV Function
+  // Export to CSV (conservé)
   const exportToCSV = (dataType: string) => {
-    let headers: string[] = [];
-    let rows: (string | number)[][] = [];
-    let filename = `rapport_${dataType}_${new Date().toISOString().split('T')[0]}.csv`;
-
-    if (dataType === 'invoices') {
-      headers = ['Numero', 'Date', 'Table', 'Caissier/Serveur', 'Total (CNY)', 'Mode Paiement', 'Statut'];
-      rows = invoices.map(inv => [
-        inv.invoiceNumber,
-        inv.createdAt,
-        inv.tableCode,
-        inv.cashierName || '-',
-        inv.totalAmount,
-        inv.paymentMethod || 'N/A',
-        inv.status
-      ]);
-    } else if (dataType === 'expenses') {
-      headers = ['ID', 'Date', 'Categorie', 'Description', 'Fournisseur', 'Montant (CNY)', 'Mode', 'Enregistre Par'];
-      rows = expenses.map(exp => [
-        exp.id,
-        exp.date,
-        exp.category,
-        `"${exp.description.replace(/"/g, '""')}"`,
-        exp.supplier || '-',
-        exp.amount,
-        exp.paymentMethod,
-        exp.recordedBy
-      ]);
-    } else if (dataType === 'attendance') {
-      headers = ['ID', 'Date', 'Heure', 'Matricule', 'Nom Employe', 'Type', 'Statut', 'Retard (min)'];
-      rows = attendanceRecords.map(att => [
-        att.id,
-        att.date,
-        att.time,
-        att.matricule,
-        att.employeeName,
-        att.type,
-        att.status,
-        att.delayMinutes
-      ]);
-    }
-
-    const csvContent = "data:text/csv;charset=utf-8," 
-      + [headers.join(','), ...rows.map(e => e.join(','))].join('\n');
-
+    const { headers, rows } = buildReportData(dataType);
+    const csvContent = "data:text/csv;charset=utf-8,"
+      + [headers.join(','), ...rows.map(e => e.map(cell => `"${String(cell ?? '').replace(/"/g, '""')}"`).join(','))].join('\n');
     const encodedUri = encodeURI(csvContent);
     const link = document.createElement('a');
     link.setAttribute('href', encodedUri);
-    link.setAttribute('download', filename);
+    link.setAttribute('download', `rapport_${dataType}_${new Date().toISOString().split('T')[0]}.csv`);
     document.body.appendChild(link);
     link.click();
     document.body.removeChild(link);
+  };
+
+  // Export to Excel (.xls via HTML table compatible with Excel)
+  const exportToExcel = (dataType: string) => {
+    const { headers, rows } = buildReportData(dataType);
+    const tableRows = rows.map(row => `<tr>${row.map(cell => `<td>${String(cell)}</td>`).join('')}</tr>`).join('');
+    const totalRow = dataType !== 'attendance' ? `<tr><td colspan="${headers.length - 1}" style="font-weight:bold">TOTAL</td><td style="font-weight:bold">${rows.reduce((sum, row) => sum + (Number(String(row[4]).replace(/[^0-9.-]/g, '')) || 0), 0)}</td></tr>` : '';
+    const html = `<html xmlns:x="urn:schemas-microsoft-com:office:excel"><head><meta charset="utf-8"/><style>table{border-collapse:collapse}th,td{border:1px solid #999;padding:4px;font-size:11px}</style></head><body><h2>Rapport Umoja - ${dataType}</h2><p>Généré le ${new Date().toLocaleString('fr-FR')}</p><table><thead><tr>${headers.map(h => `<th>${h}</th>`).join('')}</tr></thead><tbody>${tableRows}${totalRow}</tbody></table></body></html>`;
+    const blob = new Blob([html], { type: 'application/vnd.ms-excel' });
+    const link = document.createElement('a');
+    link.href = URL.createObjectURL(blob);
+    link.download = `rapport_${dataType}_${new Date().toISOString().split('T')[0]}.xls`;
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
+    URL.revokeObjectURL(link.href);
+  };
+
+  const buildReportData = (dataType: string): { headers: string[]; rows: (string | number)[][] } => {
+    if (dataType === 'invoices') {
+      return {
+        headers: ['Numero', 'Date', 'Table', 'Caissier/Serveur', 'Total (CNY)', 'Mode Paiement', 'Statut'],
+        rows: invoices.map(inv => [inv.invoiceNumber, inv.createdAt, inv.tableCode, inv.cashierName || '-', inv.totalAmount, inv.paymentMethod || 'N/A', inv.status]),
+      };
+    }
+    if (dataType === 'expenses') {
+      return {
+        headers: ['ID', 'Date', 'Categorie', 'Description', 'Fournisseur', 'Montant (CNY)', 'Mode', 'Enregistre Par'],
+        rows: expenses.map(exp => [exp.id, exp.date, exp.category, exp.description, exp.supplier || '-', exp.amount, exp.paymentMethod, exp.recordedBy]),
+      };
+    }
+    return {
+      headers: ['ID', 'Date', 'Heure', 'Matricule', 'Nom Employe', 'Type', 'Statut', 'Retard (min)'],
+      rows: attendanceRecords.map(att => [att.id, att.date, att.time, att.matricule, att.employeeName, att.type, att.status, att.delayMinutes]),
+    };
+  };
+
+  // Export PDF via impression du rapport actif avec en-tête professionnelle
+  const exportToPDF = () => {
+    const reportWindow = window.open('', '_blank');
+    if (!reportWindow) return;
+    const { headers, rows } = buildReportData(activeReportTab === 'FINANCIER' ? 'invoices' : activeReportTab === 'RH' ? 'attendance' : 'expenses');
+    const tableRows = rows.map(row => `<tr>${row.map(cell => `<td>${String(cell)}</td>`).join('')}</tr>`).join('');
+    reportWindow.document.write(`
+      <html><head><title>Rapport Umoja</title><style>
+        body { font-family: Arial, sans-serif; padding: 24px; color: #1c1917; }
+        h1 { color: #b45309; margin-bottom: 4px; }
+        .meta { color: #57534e; font-size: 12px; margin-bottom: 16px; }
+        table { width: 100%; border-collapse: collapse; font-size: 11px; }
+        th, td { border: 1px solid #a8a29e; padding: 6px; text-align: left; }
+        th { background: #292524; color: white; }
+        .footer { margin-top: 16px; font-size: 11px; color: #78716c; }
+      </style></head><body>
+        <h1>Restaurant Umoja</h1>
+        <div class="meta">Rapport : ${activeReportTab} • Généré le ${new Date().toLocaleString('fr-FR')} • Par ${currentUser ? currentUser.prenom + ' ' + currentUser.nom : 'Administrateur'}</div>
+        <table><thead><tr>${headers.map(h => `<th>${h}</th>`).join('')}</tr></thead><tbody>${tableRows}</tbody></table>
+        <div class="footer">Document généré automatiquement depuis Supabase.</div>
+      </body></html>`);
+    reportWindow.document.close();
+    reportWindow.focus();
+    reportWindow.print();
   };
 
   return (
@@ -104,11 +125,19 @@ export const ReportsManager: React.FC = () => {
 
         <div className="flex items-center gap-2">
           <button
-            onClick={() => window.print()}
-            className="px-3.5 py-2 rounded-xl bg-stone-800 hover:bg-stone-700 text-stone-300 text-xs font-semibold border border-stone-700 transition flex items-center gap-1.5"
+            onClick={() => exportToPDF()}
+            className="px-3.5 py-2 rounded-xl bg-rose-600/80 hover:bg-rose-500 text-white text-xs font-semibold transition flex items-center gap-1.5"
           >
-            <Printer className="w-3.5 h-3.5" />
-            <span>Imprimer</span>
+            <FileText className="w-3.5 h-3.5" />
+            <span>Exporter PDF</span>
+          </button>
+
+          <button
+            onClick={() => exportToExcel(activeReportTab === 'FINANCIER' ? 'invoices' : activeReportTab === 'RH' ? 'attendance' : 'expenses')}
+            className="px-3.5 py-2 rounded-xl bg-emerald-600/80 hover:bg-emerald-500 text-white text-xs font-semibold transition flex items-center gap-1.5"
+          >
+            <Download className="w-3.5 h-3.5" />
+            <span>Exporter Excel</span>
           </button>
 
           <button

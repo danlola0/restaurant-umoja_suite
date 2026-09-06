@@ -82,6 +82,18 @@ export const AttendanceManager: React.FC = () => {
   const summaries: AttendanceSummary[] = [];
   attendanceGroups.forEach(summary => summaries.push(summary));
 
+  // Règle prioritaire : horaires individuels de l'employé ; repli sur les règles globales.
+  const regularMinutesFor = (employeeId: string): number => {
+    const emp = employees.find(e => e.id === employeeId);
+    if (emp?.scheduledShiftStart && emp?.scheduledShiftEnd) {
+      const [sh, sm] = emp.scheduledShiftStart.split(':').map(Number);
+      const [eh, em] = emp.scheduledShiftEnd.split(':').map(Number);
+      const diff = (eh * 60 + em) - (sh * 60 + sm);
+      if (diff > 0) return diff;
+    }
+    return regularHours * 60;
+  };
+
   const saveRules = async (event: React.FormEvent) => {
     event.preventDefault();
     setSavingRules(true);
@@ -177,7 +189,8 @@ export const AttendanceManager: React.FC = () => {
                 const arrival = summary.arrival;
                 const departure = summary.departure;
                 const durationMinutes = arrival && departure ? Math.max(0, (new Date(`${summary.date}T${departure.time}`).getTime() - new Date(`${summary.date}T${arrival.time}`).getTime()) / 60000) : 0;
-                const overtimeMinutes = Math.max(0, durationMinutes - regularHours * 60);
+                const regularMinutes = regularMinutesFor(summary.employeeId);
+                const overtimeMinutes = Math.max(0, durationMinutes - regularMinutes);
                 const rec = arrival || departure!;
                 return <tr key={`${summary.employeeId}-${summary.date}`} className="hover:bg-stone-800/40 transition">
                   <td className="py-3 px-4">

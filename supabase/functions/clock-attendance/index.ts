@@ -57,7 +57,7 @@ Deno.serve(async request => {
     }
 
     const now = getLocalParts();
-    const [hour, minute] = String(workRules?.work_start || employee.scheduled_shift_start || '08:00').slice(0, 5).split(':').map(Number);
+    const [hour, minute] = String(employee.scheduled_shift_start || workRules?.work_start || '08:00').slice(0, 5).split(':').map(Number);
     const scheduledMinutes = hour * 60 + minute;
     const lateAfterMinutes = workRules?.late_after_minutes ?? 5;
     const delayMinutes = type === 'ENTREE' && now.minutes > scheduledMinutes + lateAfterMinutes ? now.minutes - scheduledMinutes : 0;

@@ -44,7 +44,7 @@ export const TableManager: React.FC = () => {
 
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
-    if (!code.trim()) return;
+    if (!code.trim() || capacity <= 0) return;
 
     if (editingTable) {
       updateTable(editingTable.id, {
@@ -182,8 +182,8 @@ export const TableManager: React.FC = () => {
                     type="number"
                     min={1}
                     max={30}
-                    value={capacity}
-                    onChange={(e) => setCapacity(Number(e.target.value))}
+                    value={capacity || ''}
+                    onChange={(e) => setCapacity(e.target.value === '' ? 0 : Number(e.target.value))}
                     className="w-full bg-stone-950 border border-stone-700 rounded-lg p-2 text-xs text-stone-200 focus:outline-none focus:ring-1 focus:ring-amber-500"
                   />
                 </div>

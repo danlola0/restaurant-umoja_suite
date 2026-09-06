@@ -16,7 +16,8 @@ import {
   Layers, 
   ChevronDown,
   ShoppingBag,
-  Sparkles
+  Sparkles,
+  LogOut
 } from 'lucide-react';
 
 interface HeaderProps {
@@ -33,12 +34,14 @@ export const Header: React.FC<HeaderProps> = ({ onOpenCart, cartCount = 0, onOpe
     currentRole, 
     setCurrentRole, 
     currentUser, 
+    authEmail, 
     selectedTableId, 
     setSelectedTableId, 
     tables,
     orders,
     notifications,
-    removeNotification
+    removeNotification,
+    signOut
   } = useRestaurant();
 
   const [timeStr, setTimeStr] = useState<string>('');
@@ -320,6 +323,22 @@ export const Header: React.FC<HeaderProps> = ({ onOpenCart, cartCount = 0, onOpe
                   <div className="font-semibold text-stone-200">{currentUser.prenom} {currentUser.nom}</div>
                   <div className="text-[10px] text-amber-400 font-mono">{currentUser.poste}</div>
                 </div>
+              </button>
+            )}
+
+            {/* Full secure sign-out: confirmation + clears session and sensitive local data */}
+            {authEmail && currentRole !== 'CLIENT' && !isPublicExperience && (
+              <button
+                onClick={() => {
+                  if (window.confirm('Déconnecter votre session administrateur de cette machine ?')) {
+                    void signOut();
+                  }
+                }}
+                className="flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg bg-rose-950/60 border border-rose-800/50 text-rose-300 hover:bg-rose-900/60 transition text-xs font-bold"
+                title="Se déconnecter et effacer la session de cette machine"
+              >
+                <LogOut className="w-3.5 h-3.5" />
+                <span>Déconnexion</span>
               </button>
             )}
 
