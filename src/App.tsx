@@ -1,4 +1,4 @@
-import React, { useEffect, useState } from 'react';
+import React, { useEffect, useRef, useState } from 'react';
 import { RestaurantProvider, useRestaurant } from './context/RestaurantContext';
 import { LanguageProvider } from './context/LanguageContext';
 import { Header } from './components/common/Header';
@@ -18,6 +18,8 @@ const AppContent: React.FC = () => {
   const [isLoginModalOpen, setIsLoginModalOpen] = useState(false);
   const [loginTargetRole, setLoginTargetRole] = useState<UserRole | undefined>();
   const [path, setPath] = useState(window.location.pathname || '/menu');
+  const [showSplash, setShowSplash] = useState(true);
+  const splashStartedAt = useRef(Date.now());
 
   useEffect(() => {
     const handleNavigation = () => setPath(window.location.pathname || '/menu');
@@ -63,12 +65,19 @@ const AppContent: React.FC = () => {
     setPath(nextPath);
   };
 
+  useEffect(() => {
+    if (authLoading) return;
+    const remaining = Math.max(0, 2400 - (Date.now() - splashStartedAt.current));
+    const timer = window.setTimeout(() => setShowSplash(false), remaining);
+    return () => window.clearTimeout(timer);
+  }, [authLoading]);
+
   const isInternalPath = path.startsWith('/admin') || path.startsWith('/cashier') || path.startsWith('/kitchen') || path.startsWith('/staff') || ['/caisse', '/cuisine', '/personnel', '/depenses', '/rapports'].some(prefix => path.startsWith(prefix));
   const isLoginPath = path === '/login';
   const isPublicAttendancePath = path === '/pointage';
   const showClient = !isInternalPath && !isLoginPath && !isPublicAttendancePath;
 
-  if (authLoading) {
+  if (showSplash) {
     return <SplashScreen />;
   }
 

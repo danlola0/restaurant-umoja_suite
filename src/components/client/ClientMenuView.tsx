@@ -16,11 +16,13 @@ import {
   ShoppingBag, 
   UtensilsCrossed,
   ChefHat,
-  CheckCircle2
+  CheckCircle2,
+  MapPin,
+  Phone
 } from 'lucide-react';
 
 export const ClientMenuView: React.FC = () => {
-  const { categories, products, selectedTableId, tables, orders, tableSessions } = useRestaurant();
+  const { categories, products, selectedTableId, tables, orders, tableSessions, restaurantInfo } = useRestaurant();
   const { t, translateCategory, translateDish, translateDishDescription } = useI18n();
 
   const [selectedCategory, setSelectedCategory] = useState<string>('ALL');
@@ -343,13 +345,39 @@ export const ClientMenuView: React.FC = () => {
         )}
       </main>
 
-      <footer className="border-t border-stone-800 bg-stone-900/80 px-5 sm:px-8 lg:px-10 py-8">
-        <div className="max-w-7xl mx-auto text-center space-y-2">
-          <div className="flex flex-col items-center justify-center gap-1.5 text-xs text-stone-400 sm:flex-row sm:gap-6">
-            <span>Canton, Guangdong</span>
-            <span>183 0203 8449</span>
+      <footer className="border-t border-stone-800 bg-stone-900 px-5 sm:px-8 lg:px-10 py-10">
+        <div className="max-w-7xl mx-auto">
+          <div className="flex flex-col items-center text-center gap-5">
+            <div>
+              <p className="text-sm font-black tracking-[0.18em] text-amber-400 uppercase">
+                {restaurantInfo.name}
+              </p>
+              <p className="mt-2 text-[11px] font-semibold uppercase tracking-[0.22em] text-stone-400">
+                Delivery / Livraison · Call us
+              </p>
+            </div>
+
+            <a
+              href={`tel:+86${restaurantInfo.phone.replace(/\s/g, '')}`}
+              className="inline-flex items-center gap-2 rounded-full border border-amber-500/30 bg-amber-500/10 px-4 py-2 text-sm font-bold text-amber-300 transition hover:bg-amber-500/20"
+            >
+              <Phone className="h-3.5 w-3.5" />
+              {restaurantInfo.phone}
+            </a>
+
+            <div className="flex max-w-xl flex-col items-center gap-2 text-xs leading-relaxed text-stone-400">
+              <div className="flex items-start gap-2">
+                <MapPin className="mt-0.5 h-3.5 w-3.5 shrink-0 text-amber-400" />
+                <p>地址：广州市越秀区下塘西路87号101房</p>
+              </div>
+              <p className="pl-5 sm:pl-0">
+                Room 101, 1st Floor, No. 87 Xiatangxi Road, Yuexiu District, Guangzhou
+              </p>
+            </div>
           </div>
-          <p className="pt-1 text-[11px] text-stone-500">Copyright Lola Tech 2026</p>
+          <p className="mt-8 border-t border-stone-800/80 pt-5 text-center text-[11px] text-stone-500">
+            Copyright Lola Tech 2026
+          </p>
         </div>
       </footer>
 
