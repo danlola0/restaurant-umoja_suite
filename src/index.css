@@ -10,3 +10,44 @@ body,
 	0% { transform: translateX(-110%); }
 	100% { transform: translateX(220%); }
 }
+
+@media print {
+	@page {
+		size: 80mm auto;
+		margin: 6mm;
+	}
+	html,
+	body,
+	#root {
+		overflow: visible !important;
+		height: auto !important;
+		background: #fff !important;
+	}
+	.no-print {
+		display: none !important;
+	}
+	.invoice-print-shell {
+		position: static !important;
+		inset: auto !important;
+		display: block !important;
+		background: #fff !important;
+		padding: 0 !important;
+		backdrop-filter: none !important;
+	}
+	.invoice-print-panel {
+		max-height: none !important;
+		overflow: visible !important;
+		border: 0 !important;
+		box-shadow: none !important;
+		background: #fff !important;
+		color: #000 !important;
+		max-width: none !important;
+		border-radius: 0 !important;
+	}
+	.kin-marche-receipt {
+		box-shadow: none !important;
+		margin: 0 auto !important;
+		background: #fff !important;
+		color: #000 !important;
+	}
+}

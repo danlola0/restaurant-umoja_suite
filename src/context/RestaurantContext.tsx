@@ -323,9 +323,13 @@ export const RestaurantProvider: React.FC<{ children: React.ReactNode }> = ({ ch
   const [authEmail, setAuthEmail] = useState<string | null>(null);
   const [selectedTableId, setSelectedTableId] = useState<string>('tbl-05');
 
-  const [restaurantInfo, setRestaurantInfo] = useState<RestaurantInfo>(() => 
-    loadFromStorage('info', initialRestaurantInfo)
-  );
+  const [restaurantInfo, setRestaurantInfo] = useState<RestaurantInfo>(() => {
+    const stored = loadFromStorage('info', initialRestaurantInfo);
+    if (!stored.address?.includes('广州市') || stored.name !== initialRestaurantInfo.name) {
+      return initialRestaurantInfo;
+    }
+    return stored;
+  });
 
   const [categories, setCategories] = useState<Category[]>(() => 
     loadFromStorage('categories', initialCategories)

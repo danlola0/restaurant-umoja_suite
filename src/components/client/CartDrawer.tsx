@@ -249,7 +249,7 @@ export const CartDrawer: React.FC<CartDrawerProps> = ({
                   <span className="font-mono text-stone-300 font-semibold">{formatFC(totalAmount)}</span>
                 </div>
                 <div className="flex justify-between text-stone-400">
-                  <span className="font-medium">Service & TVA</span>
+                  <span className="font-medium">Service</span>
                   <span className="font-mono text-stone-300">Inclus</span>
                 </div>
                 <div className="flex justify-between text-lg font-extrabold text-stone-100 pt-3 border-t border-stone-800">

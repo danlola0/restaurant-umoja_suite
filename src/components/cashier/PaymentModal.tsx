@@ -2,6 +2,7 @@ import React, { useState } from 'react';
 import { useRestaurant } from '../../context/RestaurantContext';
 import { Invoice, PaymentMethod } from '../../types';
 import { formatFC } from '../../utils/formatters';
+import { WECHAT_PAY_QR_SRC, ALIPAY_PAY_QR_SRC } from '../../lib/cashierOrders';
 import confetti from 'canvas-confetti';
 import { 
   X, 
@@ -46,7 +47,7 @@ export const PaymentModal: React.FC<PaymentModalProps> = ({
     { id: 'ORANGE_MONEY', label: 'Orange Money', icon: Smartphone, color: 'text-orange-400 border-orange-500/40 bg-orange-950/20' },
     { id: 'CARTE', label: 'Carte Bancaire / TPE', icon: CreditCard, color: 'text-sky-400 border-sky-500/40 bg-sky-950/20' },
     { id: 'BANQUE', label: 'Virement / Chèque', icon: Building2, color: 'text-indigo-400 border-indigo-500/40 bg-indigo-950/20' },
-    { id: 'QR_CODE', label: 'QR Code Umoja', icon: Smartphone, color: 'text-amber-400 border-amber-500/40 bg-amber-950/20' },
+    { id: 'QR_CODE', label: 'WeChat / Alipay / Lakala', icon: Smartphone, color: 'text-amber-400 border-amber-500/40 bg-amber-950/20' },
   ];
 
   const quickDenominations = [
@@ -205,15 +206,20 @@ export const PaymentModal: React.FC<PaymentModalProps> = ({
           )}
 
           {selectedMethod === 'QR_CODE' && (
-            <div className="rounded-xl border border-amber-500/40 bg-amber-950/20 p-4 text-center">
-              <p className="text-xs font-bold text-amber-300">Scanner pour régler {formatFC(invoice.remainingAmount)}</p>
-              <img
-                src={`https://api.qrserver.com/v1/create-qr-code/?size=220x220&data=${encodeURIComponent(`UMOJA|${invoice.invoiceNumber}|${invoice.remainingAmount}`)}`}
-                alt="QR Code de paiement Umoja"
-                className="mx-auto my-3 h-40 w-40 rounded-lg bg-white p-2"
-              />
-              <p className="text-[11px] text-stone-400">Après vérification du paiement sur votre canal Umoja, confirmez manuellement.</p>
-              <label className="mt-3 flex cursor-pointer items-center justify-center gap-2 text-xs font-bold text-stone-200">
+            <div className="rounded-xl border border-amber-500/40 bg-amber-950/20 p-4 text-center space-y-3">
+              <p className="text-xs font-bold text-amber-300">Scanner pour régler {formatFC(invoice.remainingAmount)} · 扫码付款</p>
+              <div className="grid grid-cols-2 gap-3">
+                <figure className="rounded-lg bg-white p-2">
+                  <img src={WECHAT_PAY_QR_SRC} alt="WeChat Pay 阿菲 UMOJA" className="mx-auto w-full max-h-44 object-contain" />
+                  <figcaption className="mt-1 text-[10px] font-bold text-stone-900">WeChat Pay · 阿菲 UMOJA</figcaption>
+                </figure>
+                <figure className="rounded-lg bg-white p-2">
+                  <img src={ALIPAY_PAY_QR_SRC} alt="Alipay" className="mx-auto w-full max-h-44 object-contain" />
+                  <figcaption className="mt-1 text-[10px] font-bold text-stone-900">Alipay</figcaption>
+                </figure>
+              </div>
+              <p className="text-[11px] text-stone-400">Après vérification du paiement, confirmez manuellement.</p>
+              <label className="mt-1 flex cursor-pointer items-center justify-center gap-2 text-xs font-bold text-stone-200">
                 <input type="checkbox" checked={qrConfirmed} onChange={event => setQrConfirmed(event.target.checked)} className="h-4 w-4 accent-amber-500" />
                 Paiement QR vérifié par le caissier
               </label>

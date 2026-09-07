@@ -5,6 +5,7 @@ import { formatFC, formatDateTime, formatTimeOnly } from '../../utils/formatters
 import { InvoiceModal } from './InvoiceModal';
 import { PaymentModal } from './PaymentModal';
 import { ServiceExpensePanel } from '../common/ServiceExpensePanel';
+import { invoiceGuestLabel, invoiceLineItems, paymentMethodLabel } from '../../lib/cashierOrders';
 import { 
   CreditCard, 
   Utensils, 
@@ -46,6 +47,7 @@ export const CashierPosView: React.FC = () => {
   const [guestCountInput, setGuestCountInput] = useState<number>(2);
   const [discountInput, setDiscountInput] = useState<number>(0);
   const [activeTab, setActiveTab] = useState<'TABLES' | 'INVOICES'>('TABLES');
+  const [invoiceSearch, setInvoiceSearch] = useState('');
 
   const selectedTable = tables.find(t => t.id === selectedTableLocalId) || tables[0] || {
     id: 'tbl-01',
@@ -122,6 +124,19 @@ export const CashierPosView: React.FC = () => {
   const totalCollectedToday = (cashRegister.totalSalesCash || 0) + (cashRegister.totalSalesMobile || 0) + (cashRegister.totalSalesCard || 0) + (cashRegister.totalSalesBank || 0);
   const occupiedTablesCount = tables.filter(t => t.status !== 'LIBRE').length;
   const pendingInvoicesCount = invoices.filter(i => i.status === 'EN_ATTENTE').length;
+  const historyInvoices = [...invoices]
+    .sort((a, b) => new Date(b.paidAt || b.createdAt).getTime() - new Date(a.paidAt || a.createdAt).getTime())
+    .filter(inv => {
+      const q = invoiceSearch.trim().toLowerCase();
+      if (!q) return true;
+      const guest = invoiceGuestLabel(inv, orders).toLowerCase();
+      return (
+        inv.invoiceNumber.toLowerCase().includes(q)
+        || guest.includes(q)
+        || (inv.paymentMethod || '').toLowerCase().includes(q)
+        || paymentMethodLabel(inv.paymentMethod).toLowerCase().includes(q)
+      );
+    });
 
   return (
     <div className="min-h-[calc(100vh-4rem)] bg-stone-950 text-stone-100 p-4 sm:p-6 space-y-6">
@@ -185,7 +200,22 @@ export const CashierPosView: React.FC = () => {
 
       <ServiceExpensePanel service="CAISSE" title="Caisse" />
 
-      {/* Main Content: Tables Floor Plan & Inspector */}
+      <div className="flex items-center gap-2 bg-stone-900 border border-stone-800 rounded-2xl p-1.5 w-full sm:w-auto">
+        <button
+          onClick={() => setActiveTab('TABLES')}
+          className={`px-4 py-2 rounded-xl text-xs font-bold transition ${activeTab === 'TABLES' ? 'bg-amber-500 text-stone-950' : 'text-stone-400 hover:text-stone-100'}`}
+        >
+          Plan de salle
+        </button>
+        <button
+          onClick={() => setActiveTab('INVOICES')}
+          className={`px-4 py-2 rounded-xl text-xs font-bold transition ${activeTab === 'INVOICES' ? 'bg-amber-500 text-stone-950' : 'text-stone-400 hover:text-stone-100'}`}
+        >
+          Historique des Factures
+        </button>
+      </div>
+
+      {activeTab === 'TABLES' && (
       <div className="grid grid-cols-1 lg:grid-cols-12 gap-6">
         
         {/* Left: Floor Plan Grid (8 cols) */}
@@ -424,44 +454,66 @@ export const CashierPosView: React.FC = () => {
         </div>
 
       </div>
+      )}
 
-      {/* Invoices and Payments History Table */}
+      {activeTab === 'INVOICES' && (
       <div className="bg-stone-900 border border-stone-800 rounded-2xl p-5 shadow-xl space-y-4">
-        <div className="flex items-center justify-between border-b border-stone-800 pb-3">
+        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 border-b border-stone-800 pb-3">
           <div className="flex items-center gap-2">
             <Receipt className="w-5 h-5 text-amber-400" />
-            <h3 className="font-bold text-sm text-stone-100">Dernières Factures & Transactions de Caisse</h3>
+            <div>
+              <h3 className="font-bold text-sm text-stone-100">Historique des Factures</h3>
+              <p className="text-[11px] text-stone-400">Cliquez une ligne pour voir et réimprimer le reçu</p>
+            </div>
           </div>
-          <span className="text-xs text-stone-400 font-mono">{invoices.length} factures générées</span>
+          <div className="flex items-center gap-2">
+            <div className="relative">
+              <Search className="w-3.5 h-3.5 absolute left-2.5 top-1/2 -translate-y-1/2 text-stone-500" />
+              <input
+                value={invoiceSearch}
+                onChange={(e) => setInvoiceSearch(e.target.value)}
+                placeholder="N°, table, client, mode…"
+                className="bg-stone-950 border border-stone-700 rounded-xl pl-8 pr-3 py-2 text-xs text-stone-200 w-56"
+              />
+            </div>
+            <span className="text-xs text-stone-400 font-mono">{historyInvoices.length} / {invoices.length}</span>
+          </div>
         </div>
 
         <div className="overflow-x-auto">
           <table className="w-full text-xs text-left text-stone-300">
             <thead className="bg-stone-950 text-stone-400 uppercase text-[10px] font-mono">
               <tr>
-                <th className="py-2.5 px-3">N° Facture</th>
+                <th className="py-2.5 px-3">N° Facture / Commande</th>
                 <th className="py-2.5 px-3">Date & Heure</th>
-                <th className="py-2.5 px-3">Table</th>
+                <th className="py-2.5 px-3">Table / Client</th>
                 <th className="py-2.5 px-3">Articles</th>
                 <th className="py-2.5 px-3">Total</th>
-                <th className="py-2.5 px-3">Mode</th>
+                <th className="py-2.5 px-3">Mode de paiement</th>
                 <th className="py-2.5 px-3">Statut</th>
-                <th className="py-2.5 px-3 text-right">Actions</th>
+                <th className="py-2.5 px-3 text-right">Reçu</th>
               </tr>
             </thead>
             <tbody className="divide-y divide-stone-800/80">
-              {invoices.slice(0, 10).map(inv => (
-                <tr key={inv.id} className="hover:bg-stone-800/40">
+              {historyInvoices.map(inv => {
+                const items = invoiceLineItems(inv, orders);
+                const guest = invoiceGuestLabel(inv, orders);
+                return (
+                <tr
+                  key={inv.id}
+                  onClick={() => setViewInvoice(inv)}
+                  className="hover:bg-stone-800/40 cursor-pointer"
+                >
                   <td className="py-2.5 px-3 font-mono font-bold text-amber-400">{inv.invoiceNumber}</td>
-                  <td className="py-2.5 px-3 text-stone-400">{formatDateTime(inv.createdAt)}</td>
-                  <td className="py-2.5 px-3 font-semibold text-stone-200">{inv.tableCode}</td>
+                  <td className="py-2.5 px-3 text-stone-400">{formatDateTime(inv.paidAt || inv.createdAt)}</td>
+                  <td className="py-2.5 px-3 font-semibold text-stone-200">{guest}</td>
                   <td className="py-2.5 px-3 text-stone-400 max-w-xs truncate">
-                    {inv.items.map(i => `${i.quantity}x ${i.productName}`).join(', ')}
+                    {items.length ? items.map(i => `${i.quantity}x ${i.productName}`).join(', ') : '—'}
                   </td>
                   <td className="py-2.5 px-3 font-mono font-bold text-stone-100">{formatFC(inv.totalAmount)}</td>
                   <td className="py-2.5 px-3">
                     <span className="px-2 py-0.5 rounded bg-stone-800 text-stone-300 font-mono text-[10px]">
-                      {inv.paymentMethod || 'Non réglé'}
+                      {paymentMethodLabel(inv.paymentMethod)}
                     </span>
                   </td>
                   <td className="py-2.5 px-3">
@@ -473,11 +525,11 @@ export const CashierPosView: React.FC = () => {
                       {inv.status === 'PAYEE' ? 'Payée' : 'En Attente'}
                     </span>
                   </td>
-                  <td className="py-2.5 px-3 text-right space-x-1.5">
+                  <td className="py-2.5 px-3 text-right space-x-1.5" onClick={(e) => e.stopPropagation()}>
                     <button
                       onClick={() => setViewInvoice(inv)}
-                      className="p-1 rounded bg-stone-800 hover:bg-stone-700 text-stone-300 hover:text-white"
-                      title="Imprimer / Afficher le ticket"
+                      className="p-1.5 rounded bg-stone-800 hover:bg-stone-700 text-stone-300 hover:text-white"
+                      title="Voir Facture / Reçu"
                     >
                       <Eye className="w-3.5 h-3.5" />
                     </button>
@@ -491,11 +543,16 @@ export const CashierPosView: React.FC = () => {
                     )}
                   </td>
                 </tr>
-              ))}
+                );
+              })}
             </tbody>
           </table>
+          {historyInvoices.length === 0 && (
+            <p className="text-center text-sm text-stone-500 py-10">Aucune facture ne correspond à cette recherche.</p>
+          )}
         </div>
       </div>
+      )}
 
       {/* Invoice Ticket Modal */}
       <InvoiceModal

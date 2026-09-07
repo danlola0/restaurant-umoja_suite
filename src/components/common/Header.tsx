@@ -99,7 +99,7 @@ export const Header: React.FC<HeaderProps> = ({ onOpenCart, cartCount = 0, onOpe
               <div className="flex items-center gap-2">
                 <span className="truncate font-bold text-base tracking-tight text-amber-400 sm:text-lg">{restaurantInfo.name}</span>
                 <span className="hidden sm:inline-block px-2 py-0.5 text-[10px] uppercase tracking-wider font-semibold rounded bg-amber-500/20 text-amber-300 border border-amber-500/30">
-                  Kinshasa RDC
+                  Guangzhou
                 </span>
               </div>
               <p className="text-xs text-stone-400 hidden md:block">

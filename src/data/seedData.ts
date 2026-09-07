@@ -15,13 +15,13 @@ import {
 } from '../types';
 
 export const initialRestaurantInfo: RestaurantInfo = {
-  name: "Restaurant Umoja",
-  slogan: "L'art culinaire authentique & l'excellence du service",
-  address: "Avenue de la Paix N° 45, Gombe, Kinshasa - RDC",
-  phone: "+243 81 234 5678 / +243 89 876 5432",
-  email: "contact@restaurant-umoja.cd",
+  name: "UMOJA MALEWA RESTAURANT",
+  slogan: "Delivery / Livraison · CALL US",
+  address: "广州市越秀区下塘西路87号101房 · Room 101, 1st Floor, No. 87 Xiatangxi Road, Yuexiu District, Guangzhou",
+  phone: "17701958709",
+  email: "contact@umoja-malewa.com",
   currency: "CNY",
-  nifRccm: "CD/KIN/RCCM/24-B-01452 - NIF: A1204982Z",
+  nifRccm: "",
   tableCount: 12,
 };
 
