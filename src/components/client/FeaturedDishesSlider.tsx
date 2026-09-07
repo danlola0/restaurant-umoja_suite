@@ -2,6 +2,7 @@ import React, { useState, useEffect } from 'react';
 import { Product } from '../../types';
 import { DEFAULT_FOOD_IMAGE, formatFC, handleImageError } from '../../utils/formatters';
 import { Sparkles, Flame, Clock, ChevronLeft, ChevronRight, ShoppingBag, Eye } from 'lucide-react';
+import { useI18n } from '../../context/LanguageContext';
 
 interface FeaturedDishesSliderProps {
   products: Product[];
@@ -14,25 +15,21 @@ export const FeaturedDishesSlider: React.FC<FeaturedDishesSliderProps> = ({
   onSelectProduct,
   onAddToCart
 }) => {
-  // Select top highlight products (those with photos, recommended or top dishes)
+  const { t, translateDish, translateDishDescription } = useI18n();
   const featured = React.useMemo(() => {
     const recs = products.filter(p => p.available && p.photo);
-    if (recs.length === 0) return products.slice(0, 5);
-    // Sort to prioritize recommended ones, then by order
+    if (recs.length === 0) return products.filter(p => p.available).slice(0, 5);
     return [...recs].sort((a, b) => (b.isRecommended ? 1 : 0) - (a.isRecommended ? 1 : 0)).slice(0, 8);
   }, [products]);
 
   const [currentIndex, setCurrentIndex] = useState(0);
   const [isPaused, setIsPaused] = useState(false);
 
-  // Auto-cycle through images every 4 seconds
   useEffect(() => {
     if (featured.length <= 1 || isPaused) return;
-
     const timer = setInterval(() => {
       setCurrentIndex(prev => (prev + 1) % featured.length);
-    }, 4000);
-
+    }, 4500);
     return () => clearInterval(timer);
   }, [featured.length, isPaused]);
 
@@ -51,128 +48,112 @@ export const FeaturedDishesSlider: React.FC<FeaturedDishesSliderProps> = ({
   };
 
   return (
-    <div 
-      className="relative w-full rounded-3xl overflow-hidden bg-stone-900 border border-amber-500/20 shadow-2xl group"
+    <div
+      className="relative w-full overflow-hidden rounded-3xl border border-amber-500/20 bg-stone-900 shadow-2xl group"
       onMouseEnter={() => setIsPaused(true)}
       onMouseLeave={() => setIsPaused(false)}
     >
-      {/* Dynamic Background Image with Blur & Gradient Overlay */}
-      <div className="relative h-64 sm:h-72 md:h-80 w-full overflow-hidden">
+      <div className="relative h-44 w-full overflow-hidden bg-stone-950 sm:h-52 md:h-60 lg:h-64">
         {featured.map((dish, idx) => (
           <div
             key={dish.id}
             className={`absolute inset-0 transition-opacity duration-700 ease-in-out ${
-              idx === currentIndex ? 'opacity-100 z-10 scale-100' : 'opacity-0 z-0 scale-105 pointer-events-none'
+              idx === currentIndex ? 'z-10 scale-100 opacity-100' : 'pointer-events-none z-0 scale-105 opacity-0'
             }`}
           >
             <img
               src={dish.photo || DEFAULT_FOOD_IMAGE}
-              alt={dish.name}
+              alt={translateDish(dish.name)}
               referrerPolicy="no-referrer"
               onError={handleImageError}
               fetchPriority={idx === currentIndex ? 'high' : 'low'}
               decoding="async"
-              className="w-full h-full object-cover transform transition-transform duration-[1200ms] group-hover:scale-105"
+              className="h-full w-full object-cover object-center transition-transform duration-[1200ms] group-hover:scale-105"
             />
-            {/* Cinematic Gradient Overlays */}
-            <div className="absolute inset-0 bg-gradient-to-r from-stone-950 via-stone-950/70 to-transparent w-full md:w-3/4" />
+            <div className="absolute inset-0 w-full bg-gradient-to-r from-stone-950 via-stone-950/70 to-transparent md:w-3/4" />
             <div className="absolute inset-0 bg-gradient-to-t from-stone-950 via-transparent to-stone-950/40" />
           </div>
         ))}
 
-        {/* Content Box Over the Sliding Image */}
-        <div className="relative z-20 h-full max-w-7xl mx-auto px-5 sm:px-8 flex flex-col justify-between py-6">
-          {/* Top Tag & Slide Indicators */}
+        <div className="relative z-20 flex h-full flex-col justify-between px-3 py-3 sm:px-5 sm:py-4">
           <div className="flex items-center justify-between gap-2">
             <div className="flex items-center gap-2">
-              <span className="inline-flex items-center gap-1.5 px-3.5 py-1.5 rounded-full text-[11px] font-extrabold uppercase tracking-wider bg-amber-500 text-stone-950 shadow-lg shadow-amber-500/30">
-                <Sparkles className="w-3.5 h-3.5" />
-                À la une ce soir
+              <span className="inline-flex items-center gap-1 rounded-full bg-amber-500 px-2.5 py-1 text-[10px] font-extrabold uppercase tracking-wider text-stone-950 shadow-lg shadow-amber-500/30">
+                <Sparkles className="w-3 h-3" />
+                {t('featuredTonight')}
               </span>
               {currentDish.isRecommended && (
-                <span className="hidden sm:inline-flex items-center gap-1 px-3 py-1 rounded-full text-[11px] font-semibold bg-red-500/20 text-red-300 border border-red-500/40">
+                <span className="hidden sm:inline-flex items-center gap-1 rounded-full border border-red-500/40 bg-red-500/20 px-2 py-0.5 text-[10px] font-semibold text-red-300">
                   <Flame className="w-3 h-3 text-red-400" />
-                  Coup de cœur
+                  {t('favorite')}
                 </span>
               )}
             </div>
-
-            {/* Slide Index Pill */}
-            <div className="px-2.5 py-1 rounded-full bg-stone-900/80 backdrop-blur-md border border-stone-700/60 text-[11px] font-mono text-stone-300">
+            <div className="rounded-full border border-stone-700/60 bg-stone-900/80 px-2 py-0.5 font-mono text-[10px] text-stone-300 backdrop-blur-md">
               {currentIndex + 1} / {featured.length}
             </div>
           </div>
 
-          {/* Center/Bottom Dish Details */}
-          <div className="max-w-xl space-y-3 mt-auto">
-            <h2 className="text-2xl sm:text-3xl md:text-4xl font-black text-white tracking-tight drop-shadow-md line-clamp-1">
-              {currentDish.name}
+          <div className="mt-auto max-w-lg space-y-1.5">
+            <h2 className="line-clamp-1 text-lg font-black tracking-tight text-white drop-shadow-md sm:text-xl md:text-2xl">
+              {translateDish(currentDish.name)}
             </h2>
-            <p className="text-sm sm:text-[15px] text-stone-300 line-clamp-2 drop-shadow leading-relaxed">
-              {currentDish.description}
+            <p className="hidden line-clamp-1 text-xs leading-relaxed text-stone-300 drop-shadow sm:block">
+              {translateDishDescription(currentDish.name, currentDish.description)}
             </p>
-
-            <div className="flex flex-wrap items-center gap-3 pt-2">
-              <div className="text-xl sm:text-3xl font-extrabold text-amber-400 font-mono drop-shadow">
+            <div className="flex flex-wrap items-center gap-2 pt-0.5">
+              <div className="font-mono text-base font-extrabold text-amber-400 drop-shadow sm:text-xl">
                 {formatFC(currentDish.price)}
               </div>
-
               {currentDish.preparationTimeMinutes && (
-                <div className="flex items-center gap-1 text-xs text-stone-300 bg-stone-950/60 backdrop-blur-sm px-3 py-1.5 rounded-full border border-stone-800">
-                  <Clock className="w-3.5 h-3.5 text-amber-400" />
+                <div className="flex items-center gap-1 rounded-full border border-stone-800 bg-stone-950/60 px-2 py-1 text-[10px] text-stone-300 backdrop-blur-sm">
+                  <Clock className="w-3 h-3 text-amber-400" />
                   <span>{currentDish.preparationTimeMinutes} min</span>
                 </div>
               )}
-
-              {/* Action Buttons */}
-              <div className="flex items-center gap-2 ml-auto sm:ml-0">
+              <div className="flex items-center gap-1.5">
                 <button
                   onClick={() => onSelectProduct(currentDish)}
-                  className="flex items-center gap-1.5 min-h-11 px-4 py-2 rounded-xl bg-stone-800/90 hover:bg-stone-700 text-stone-100 text-xs font-semibold backdrop-blur-md border border-stone-700 transition active:scale-95"
+                  className="hidden min-h-9 items-center gap-1 rounded-lg border border-stone-700 bg-stone-800/90 px-3 py-1.5 text-[11px] font-semibold text-stone-100 backdrop-blur-md transition hover:bg-stone-700 active:scale-95 sm:flex"
                 >
                   <Eye className="w-3.5 h-3.5 text-stone-400" />
-                  <span>Voir l’assiette</span>
+                  <span>{t('viewDish')}</span>
                 </button>
                 <button
                   onClick={() => onAddToCart(currentDish, 1)}
-                  className="flex items-center gap-1.5 min-h-11 px-5 py-2 rounded-xl bg-amber-500 hover:bg-amber-400 text-stone-950 text-xs font-extrabold shadow-lg shadow-amber-900/40 transition active:scale-95 cursor-pointer"
+                  className="flex min-h-9 cursor-pointer items-center gap-1 rounded-lg bg-amber-500 px-3 py-1.5 text-[11px] font-extrabold text-stone-950 shadow-lg shadow-amber-900/40 transition hover:bg-amber-400 active:scale-95"
                 >
                   <ShoppingBag className="w-3.5 h-3.5" />
-                  <span>Je commande</span>
+                  <span>{t('orderNow')}</span>
                 </button>
               </div>
             </div>
           </div>
         </div>
 
-        {/* Navigation Arrows */}
         <button
           onClick={handlePrev}
-          aria-label="Image précédente"
-          className="absolute left-3 top-1/2 -translate-y-1/2 z-30 min-h-11 min-w-11 rounded-full bg-stone-950/60 hover:bg-stone-900 text-stone-200 hover:text-white border border-stone-800/80 backdrop-blur-sm transition active:scale-90 flex items-center justify-center"
+          aria-label={t('prevImage')}
+          className="absolute left-2 top-1/2 z-30 flex h-8 w-8 -translate-y-1/2 items-center justify-center rounded-full border border-stone-800/80 bg-stone-950/50 text-stone-200 backdrop-blur-sm transition hover:bg-stone-900 hover:text-white active:scale-90 sm:h-9 sm:w-9"
         >
-          <ChevronLeft className="w-5 h-5" />
+          <ChevronLeft className="w-4 h-4" />
         </button>
-
         <button
           onClick={handleNext}
-          aria-label="Image suivante"
-          className="absolute right-3 top-1/2 -translate-y-1/2 z-30 min-h-11 min-w-11 rounded-full bg-stone-950/60 hover:bg-stone-900 text-stone-200 hover:text-white border border-stone-800/80 backdrop-blur-sm transition active:scale-90 flex items-center justify-center"
+          aria-label={t('nextImage')}
+          className="absolute right-2 top-1/2 z-30 flex h-8 w-8 -translate-y-1/2 items-center justify-center rounded-full border border-stone-800/80 bg-stone-950/50 text-stone-200 backdrop-blur-sm transition hover:bg-stone-900 hover:text-white active:scale-90 sm:h-9 sm:w-9"
         >
-          <ChevronRight className="w-5 h-5" />
+          <ChevronRight className="w-4 h-4" />
         </button>
 
-        {/* Bottom Pagination Dots */}
-        <div className="absolute bottom-2.5 right-6 z-30 flex items-center gap-1.5">
-          {featured.map((_, i) => (
+        <div className="absolute bottom-2 left-1/2 z-30 flex -translate-x-1/2 items-center gap-1">
+          {featured.map((dish, i) => (
             <button
-              key={i}
+              key={dish.id}
               onClick={() => setCurrentIndex(i)}
-              aria-label={`Aller au plat ${i + 1}`}
-              className={`transition-all duration-300 rounded-full ${
-                i === currentIndex
-                  ? 'w-6 h-1.5 bg-amber-500'
-                  : 'w-1.5 h-1.5 bg-stone-600/80 hover:bg-stone-400'
+              aria-label={`${t('goToDish')} ${i + 1}`}
+              className={`rounded-full transition-all duration-300 ${
+                i === currentIndex ? 'h-1.5 w-5 bg-amber-500' : 'h-1.5 w-1.5 bg-stone-500/80 hover:bg-stone-300'
               }`}
             />
           ))}

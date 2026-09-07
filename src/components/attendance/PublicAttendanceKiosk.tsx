@@ -1,6 +1,8 @@
 import React, { useState } from 'react';
 import { supabase } from '../../lib/supabase';
-import { AlertCircle, CheckCircle2, Clock, KeyRound, LogIn, LogOut, ShieldCheck } from 'lucide-react';
+import { AttendanceType } from '../../types';
+import { ATTENDANCE_TYPE_LABELS } from '../../utils/attendanceStatus';
+import { AlertCircle, CheckCircle2, Clock, Coffee, KeyRound, LogIn, LogOut, ShieldCheck } from 'lucide-react';
 
 export const PublicAttendanceKiosk: React.FC = () => {
   const [matricule, setMatricule] = useState('');
@@ -8,7 +10,7 @@ export const PublicAttendanceKiosk: React.FC = () => {
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [feedback, setFeedback] = useState<{ type: 'success' | 'error'; message: string } | null>(null);
 
-  const submitAttendance = async (type: 'ENTREE' | 'SORTIE') => {
+  const submitAttendance = async (type: AttendanceType) => {
     if (!matricule.trim() || pin.length !== 4) {
       setFeedback({ type: 'error', message: 'Saisissez votre matricule et votre code PIN à 4 chiffres.' });
       return;
@@ -26,7 +28,7 @@ export const PublicAttendanceKiosk: React.FC = () => {
       setFeedback({ type: 'error', message: data?.error || error?.message || 'Pointage refusé.' });
       return;
     }
-    setFeedback({ type: 'success', message: data.message });
+    setFeedback({ type: 'success', message: data.message || `${ATTENDANCE_TYPE_LABELS[type]} enregistrée.` });
   };
 
   return (
@@ -38,14 +40,14 @@ export const PublicAttendanceKiosk: React.FC = () => {
           </div>
           <div>
             <h1 className="text-base font-extrabold">Pointage Personnel</h1>
-            <p className="text-xs text-stone-400">Accès réservé au pointage des employés.</p>
+            <p className="text-xs text-stone-400">Borne employés · enregistrement direct dans Supabase.</p>
           </div>
         </div>
 
         <div className="rounded-2xl border border-stone-800 bg-stone-900 p-5 shadow-xl">
           <div className="mb-5 flex items-start gap-3 rounded-xl border border-amber-500/30 bg-amber-500/10 p-3 text-xs text-stone-300">
             <ShieldCheck className="h-5 w-5 shrink-0 text-amber-400" />
-            <span>Aucune liste du personnel ni donnée de présence n’est affichée sur cette borne.</span>
+            <span>Prise de poste, pause et fin de service sont enregistrés dans la table des présences, sans afficher la liste du personnel.</span>
           </div>
 
           <div className="space-y-4">
@@ -60,8 +62,10 @@ export const PublicAttendanceKiosk: React.FC = () => {
             </div>
 
             <div className="grid grid-cols-2 gap-3 pt-2">
-              <button type="button" disabled={isSubmitting} onClick={() => void submitAttendance('ENTREE')} className="flex items-center justify-center gap-2 rounded-xl bg-emerald-600 px-3 py-3 text-xs font-bold text-white transition hover:bg-emerald-500 disabled:opacity-50"><LogIn className="h-4 w-4" /> Arrivée</button>
-              <button type="button" disabled={isSubmitting} onClick={() => void submitAttendance('SORTIE')} className="flex items-center justify-center gap-2 rounded-xl bg-stone-700 px-3 py-3 text-xs font-bold text-white transition hover:bg-stone-600 disabled:opacity-50"><LogOut className="h-4 w-4" /> Départ</button>
+              <button type="button" disabled={isSubmitting} onClick={() => void submitAttendance('ENTREE')} className="flex items-center justify-center gap-2 rounded-xl bg-emerald-600 px-3 py-3 text-xs font-bold text-white transition hover:bg-emerald-500 disabled:opacity-50"><LogIn className="h-4 w-4" /> Prise de poste</button>
+              <button type="button" disabled={isSubmitting} onClick={() => void submitAttendance('DEBUT_PAUSE')} className="flex items-center justify-center gap-2 rounded-xl bg-amber-700 px-3 py-3 text-xs font-bold text-white transition hover:bg-amber-600 disabled:opacity-50"><Coffee className="h-4 w-4" /> Pause</button>
+              <button type="button" disabled={isSubmitting} onClick={() => void submitAttendance('FIN_PAUSE')} className="flex items-center justify-center gap-2 rounded-xl bg-sky-800 px-3 py-3 text-xs font-bold text-white transition hover:bg-sky-700 disabled:opacity-50"><Clock className="h-4 w-4" /> Reprise</button>
+              <button type="button" disabled={isSubmitting} onClick={() => void submitAttendance('SORTIE')} className="flex items-center justify-center gap-2 rounded-xl bg-stone-700 px-3 py-3 text-xs font-bold text-white transition hover:bg-stone-600 disabled:opacity-50"><LogOut className="h-4 w-4" /> Fin de service</button>
             </div>
 
             {feedback && <div role="status" className={`flex items-start gap-2 rounded-xl border p-3 text-xs ${feedback.type === 'success' ? 'border-emerald-600/50 bg-emerald-950/40 text-emerald-200' : 'border-rose-600/50 bg-rose-950/40 text-rose-200'}`}>

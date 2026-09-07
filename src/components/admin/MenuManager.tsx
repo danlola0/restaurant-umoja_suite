@@ -33,6 +33,7 @@ export const MenuManager: React.FC = () => {
   } = useRestaurant();
 
   const [selectedCategoryId, setSelectedCategoryId] = useState<string>('ALL');
+  const [visibilityFilter, setVisibilityFilter] = useState<'ALL' | 'VISIBLE' | 'HIDDEN'>('ALL');
   const [searchQuery, setSearchQuery] = useState<string>('');
   const [editingProduct, setEditingProduct] = useState<Product | null>(null);
   const [isCreatingNew, setIsCreatingNew] = useState<boolean>(false);
@@ -154,8 +155,11 @@ export const MenuManager: React.FC = () => {
     setShowCategoryModal(false);
   };
 
+  const hiddenCount = products.filter(p => !p.available).length;
   const filteredProducts = products.filter(p => {
     if (selectedCategoryId !== 'ALL' && p.categoryId !== selectedCategoryId) return false;
+    if (visibilityFilter === 'VISIBLE' && !p.available) return false;
+    if (visibilityFilter === 'HIDDEN' && p.available) return false;
     if (searchQuery.trim()) {
       const q = searchQuery.toLowerCase();
       if (!p.name.toLowerCase().includes(q) && !p.description.toLowerCase().includes(q)) return false;
@@ -184,7 +188,9 @@ export const MenuManager: React.FC = () => {
             <Utensils className="w-4 h-4 text-amber-400" />
             Gestion de la Carte & des Produits ({products.length} plats)
           </h2>
-          <p className="text-xs text-stone-400">Création, ajustement des tarifs, disponibilité cuisine et catégories</p>
+          <p className="text-xs text-stone-400">
+            Masquer / Démasquer un plat pour l’Espace Client (colonne <strong className="text-amber-300">Carte client</strong>)
+          </p>
         </div>
 
         <div className="flex items-center gap-2">
@@ -221,6 +227,33 @@ export const MenuManager: React.FC = () => {
 
         <div className="flex items-center gap-1.5 overflow-x-auto pb-1 sm:pb-0">
           <button
+            type="button"
+            onClick={() => setVisibilityFilter('ALL')}
+            className={`px-3 py-1.5 rounded-lg text-xs font-semibold whitespace-nowrap transition ${
+              visibilityFilter === 'ALL' ? 'bg-stone-700 text-white' : 'bg-stone-900 text-stone-400 hover:text-stone-200'
+            }`}
+          >
+            Tous les plats
+          </button>
+          <button
+            type="button"
+            onClick={() => setVisibilityFilter('VISIBLE')}
+            className={`px-3 py-1.5 rounded-lg text-xs font-semibold whitespace-nowrap transition ${
+              visibilityFilter === 'VISIBLE' ? 'bg-emerald-700 text-white' : 'bg-stone-900 text-stone-400 hover:text-stone-200'
+            }`}
+          >
+            Visibles client
+          </button>
+          <button
+            type="button"
+            onClick={() => setVisibilityFilter('HIDDEN')}
+            className={`px-3 py-1.5 rounded-lg text-xs font-semibold whitespace-nowrap transition ${
+              visibilityFilter === 'HIDDEN' ? 'bg-rose-800 text-white' : 'bg-stone-900 text-stone-400 hover:text-stone-200'
+            }`}
+          >
+            Masqués ({hiddenCount})
+          </button>
+          <button
             onClick={() => setSelectedCategoryId('ALL')}
             className={`px-3 py-1.5 rounded-lg text-xs font-semibold whitespace-nowrap transition ${
               selectedCategoryId === 'ALL' ? 'bg-amber-600 text-white shadow' : 'bg-stone-900 text-stone-400 hover:text-stone-200'
@@ -249,10 +282,10 @@ export const MenuManager: React.FC = () => {
             <thead className="bg-stone-950 text-stone-400 uppercase text-[10px] font-mono">
               <tr>
                 <th className="py-3 px-4">Plat</th>
+                <th className="py-3 px-4">Carte client</th>
                 <th className="py-3 px-4">Catégorie</th>
                 <th className="py-3 px-4">Prix Unitaire</th>
                 <th className="py-3 px-4">Temps</th>
-                <th className="py-3 px-4">Statut Stock</th>
                 <th className="py-3 px-4">Spécialité</th>
                 <th className="py-3 px-4 text-right">Actions</th>
               </tr>
@@ -261,7 +294,7 @@ export const MenuManager: React.FC = () => {
               {filteredProducts.map(p => {
                 const cat = categories.find(c => c.id === p.categoryId);
                 return (
-                  <tr key={p.id} className="hover:bg-stone-800/40 transition">
+                  <tr key={p.id} className={`transition ${p.available ? 'hover:bg-stone-800/40' : 'bg-stone-950/70 opacity-70'}`}>
                     <td className="py-3 px-4">
                       <div className="flex items-center gap-3">
                         <img
@@ -269,13 +302,46 @@ export const MenuManager: React.FC = () => {
                           alt={p.name}
                           referrerPolicy="no-referrer"
                           onError={handleImageError}
-                          className="w-10 h-10 rounded-lg object-cover bg-stone-950 shrink-0"
+                          className={`w-10 h-10 rounded-lg object-cover bg-stone-950 shrink-0 ${p.available ? '' : 'grayscale'}`}
                         />
                         <div>
-                          <div className="font-bold text-stone-100 text-xs">{p.name}</div>
+                          <div className="flex flex-wrap items-center gap-1.5">
+                            <span className="font-bold text-stone-100 text-xs">{p.name}</span>
+                            {!p.available && (
+                              <span className="rounded-full border border-rose-500/40 bg-rose-950/80 px-2 py-0.5 text-[9px] font-bold uppercase tracking-wide text-rose-300">
+                                Masqué du menu
+                              </span>
+                            )}
+                          </div>
                           <div className="text-[11px] text-stone-400 line-clamp-1 max-w-xs">{p.description}</div>
                         </div>
                       </div>
+                    </td>
+
+                    <td className="py-3 px-4">
+                      <button
+                        type="button"
+                        onClick={() => toggleProductAvailability(p.id)}
+                        className="flex items-center gap-2"
+                        title={p.available ? 'Masquer de l’Espace Client' : 'Afficher dans l’Espace Client'}
+                      >
+                        <span
+                          className={`relative inline-flex h-6 w-11 shrink-0 items-center rounded-full border transition ${
+                            p.available
+                              ? 'border-emerald-500/50 bg-emerald-500'
+                              : 'border-stone-600 bg-stone-700'
+                          }`}
+                        >
+                          <span
+                            className={`inline-block h-4 w-4 rounded-full bg-white shadow transition ${
+                              p.available ? 'translate-x-6' : 'translate-x-1'
+                            }`}
+                          />
+                        </span>
+                        <span className={`text-[10px] font-bold ${p.available ? 'text-emerald-300' : 'text-rose-300'}`}>
+                          {p.available ? 'Masquer' : 'Démasquer'}
+                        </span>
+                      </button>
                     </td>
 
                     <td className="py-3 px-4">
@@ -290,20 +356,6 @@ export const MenuManager: React.FC = () => {
 
                     <td className="py-3 px-4 text-stone-400">
                       ~{p.preparationTimeMinutes} min
-                    </td>
-
-                    <td className="py-3 px-4">
-                      <button
-                        onClick={() => toggleProductAvailability(p.id)}
-                        className={`px-2.5 py-1 rounded-full text-[10px] font-bold transition flex items-center gap-1 ${
-                          p.available
-                            ? 'bg-emerald-950 text-emerald-300 border border-emerald-600/50 hover:bg-emerald-900/50'
-                            : 'bg-rose-950 text-rose-300 border border-rose-600/50 hover:bg-rose-900/50'
-                        }`}
-                      >
-                        <span className={`w-1.5 h-1.5 rounded-full ${p.available ? 'bg-emerald-400' : 'bg-rose-400'}`} />
-                        {p.available ? 'Disponible' : 'Épuisé'}
-                      </button>
                     </td>
 
                     <td className="py-3 px-4">

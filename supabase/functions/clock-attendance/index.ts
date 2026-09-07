@@ -30,7 +30,7 @@ Deno.serve(async request => {
 
   try {
     const { matricule, pin, type } = await request.json();
-    if (typeof matricule !== 'string' || !/^EMP-[A-Z0-9-]+$/i.test(matricule.trim()) || typeof pin !== 'string' || !/^\d{4}$/.test(pin) || !['ENTREE', 'SORTIE'].includes(type)) {
+    if (typeof matricule !== 'string' || !/^EMP-[A-Z0-9-]+$/i.test(matricule.trim()) || typeof pin !== 'string' || !/^\d{4}$/.test(pin) || !['ENTREE', 'DEBUT_PAUSE', 'FIN_PAUSE', 'SORTIE'].includes(type)) {
       throw new Error('Informations de pointage invalides.');
     }
 
@@ -83,7 +83,13 @@ Deno.serve(async request => {
       details: `Pointage ${type} validé sur borne pour ${employee.matricule}.`,
     });
 
-    const label = type === 'ENTREE' ? 'Arrivée' : 'Départ';
+    const labels: Record<string, string> = {
+      ENTREE: 'Prise de poste',
+      DEBUT_PAUSE: 'Début de pause',
+      FIN_PAUSE: 'Fin de pause',
+      SORTIE: 'Fin de service',
+    };
+    const label = labels[type] || 'Pointage';
     return new Response(JSON.stringify({
       success: true,
       message: `${label} enregistrée à ${now.time}.`,

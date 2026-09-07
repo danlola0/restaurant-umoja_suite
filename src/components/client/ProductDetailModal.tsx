@@ -2,6 +2,7 @@ import React, { useState } from 'react';
 import { Product } from '../../types';
 import { DEFAULT_FOOD_IMAGE, formatFC, handleImageError } from '../../utils/formatters';
 import { X, Plus, Minus, Flame, Clock, Check, ShoppingBag, Sparkles, AlertCircle } from 'lucide-react';
+import { useI18n } from '../../context/LanguageContext';
 
 interface ProductDetailModalProps {
   product: Product | null;
@@ -14,6 +15,7 @@ export const ProductDetailModal: React.FC<ProductDetailModalProps> = ({
   onClose,
   onAddToCart,
 }) => {
+  const { t, translateDish, translateDishDescription } = useI18n();
   const [quantity, setQuantity] = useState(1);
   const [cookingNotes, setCookingNotes] = useState('');
   const [addedSuccess, setAddedSuccess] = useState(false);
@@ -30,11 +32,11 @@ export const ProductDetailModal: React.FC<ProductDetailModalProps> = ({
   };
 
   const quickInstructions = [
-    'Sans piment',
-    'Piment à part',
-    'Bien cuit / Très croustillant',
-    'Sauce à part',
-    'Sans oignons',
+    t('noSpice'),
+    t('spiceAside'),
+    t('wellDone'),
+    t('sauceAside'),
+    t('noOnion'),
   ];
 
   return (
@@ -53,7 +55,7 @@ export const ProductDetailModal: React.FC<ProductDetailModalProps> = ({
         <div className="relative h-64 w-full overflow-hidden bg-stone-950 shrink-0">
           <img
             src={product.photo || DEFAULT_FOOD_IMAGE}
-            alt={product.name}
+            alt={translateDish(product.name)}
             referrerPolicy="no-referrer"
             onError={handleImageError}
             decoding="async"
@@ -66,13 +68,13 @@ export const ProductDetailModal: React.FC<ProductDetailModalProps> = ({
             {product.isRecommended && (
               <span className="flex items-center gap-1.5 px-3 py-1 rounded-full text-[11px] font-bold uppercase tracking-wide bg-amber-500 text-stone-950 shadow-md">
                 <Sparkles className="w-3.5 h-3.5" />
-                Chef’s Choice
+                {t('chefsChoice')}
               </span>
             )}
             {product.spicyLevel && product.spicyLevel > 0 ? (
               <span className="flex items-center gap-1 px-2.5 py-1 rounded-full text-xs font-semibold bg-rose-950/80 text-rose-300 border border-rose-700/50">
                 <Flame className="w-3.5 h-3.5 text-rose-400" />
-                {product.spicyLevel === 1 ? 'Légèrement épicé' : product.spicyLevel === 2 ? 'Épicé' : 'Très relevé'}
+                {product.spicyLevel === 1 ? t('spicyLight') : product.spicyLevel === 2 ? t('spicyMed') : t('spicyHot')}
               </span>
             ) : null}
             <span className="flex items-center gap-1 px-2.5 py-1 rounded-full text-xs font-medium bg-stone-800/80 text-stone-300 border border-stone-700">
@@ -86,12 +88,12 @@ export const ProductDetailModal: React.FC<ProductDetailModalProps> = ({
         <div className="p-6 sm:p-7 overflow-y-auto space-y-5 flex-1">
           <div>
             <div className="flex items-start justify-between gap-3">
-              <h3 className="text-2xl font-bold tracking-tight text-stone-100">{product.name}</h3>
+              <h3 className="text-2xl font-bold tracking-tight text-stone-100">{translateDish(product.name)}</h3>
               <div className="text-xl font-extrabold text-amber-400 shrink-0 font-mono">
                 {formatFC(product.price)}
               </div>
             </div>
-            <p className="text-stone-300 text-[15px] mt-3 leading-relaxed">{product.description}</p>
+            <p className="text-stone-300 text-[15px] mt-3 leading-relaxed">{translateDishDescription(product.name, product.description)}</p>
           </div>
 
           {/* Tags */}
@@ -108,8 +110,8 @@ export const ProductDetailModal: React.FC<ProductDetailModalProps> = ({
           {/* Cooking Instructions / Special Requests */}
           <div className="space-y-2.5 pt-3 border-t border-stone-800">
             <label className="text-xs font-bold text-stone-300 flex items-center justify-between gap-2">
-              <span>Comment le voulez-vous ?</span>
-              <span className="text-[11px] text-stone-400 font-medium">Optionnel</span>
+              <span>{t('howYouLike')}</span>
+              <span className="text-[11px] text-stone-400 font-medium">{t('optional')}</span>
             </label>
 
             {/* Quick Chips */}
@@ -140,7 +142,7 @@ export const ProductDetailModal: React.FC<ProductDetailModalProps> = ({
               rows={2}
               value={cookingNotes}
               onChange={(e) => setCookingNotes(e.target.value)}
-              placeholder="Allergies, cuisson, sauce à part…"
+              placeholder={t('notesPlaceholder')}
               className="w-full bg-stone-950 border border-stone-700 rounded-2xl p-3 text-sm text-stone-200 placeholder-stone-500 focus:outline-none focus:ring-1 focus:ring-amber-500"
             />
           </div>
@@ -184,17 +186,17 @@ export const ProductDetailModal: React.FC<ProductDetailModalProps> = ({
             {addedSuccess ? (
               <>
                 <Check className="w-4 h-4" />
-                Ajouté au plateau
+                {t('addedToPlate')}
               </>
             ) : !product.available ? (
               <>
                 <AlertCircle className="w-4 h-4" />
-                Indisponible pour l’instant
+                {t('unavailable')}
               </>
             ) : (
               <>
                 <ShoppingBag className="w-4 h-4" />
-                Ajouter · {formatFC(product.price * quantity)}
+                {t('addToCart')} · {formatFC(product.price * quantity)}
               </>
             )}
           </button>

@@ -1,5 +1,6 @@
 import React, { useEffect, useState } from 'react';
 import { RestaurantProvider, useRestaurant } from './context/RestaurantContext';
+import { LanguageProvider } from './context/LanguageContext';
 import { Header } from './components/common/Header';
 import { SplashScreen } from './components/common/SplashScreen';
 import { ClientMenuView } from './components/client/ClientMenuView';
@@ -140,7 +141,9 @@ const AppContent: React.FC = () => {
 export default function App() {
   return (
     <RestaurantProvider>
-      <AppContent />
+      <LanguageProvider>
+        <AppContent />
+      </LanguageProvider>
     </RestaurantProvider>
   );
 }

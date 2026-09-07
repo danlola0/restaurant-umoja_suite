@@ -1,13 +1,14 @@
 import React, { useState, useEffect } from 'react';
 import { useRestaurant } from '../../context/RestaurantContext';
+import { useI18n } from '../../context/LanguageContext';
+import { LanguageSwitcher } from './LanguageSwitcher';
 import { UserRole } from '../../types';
 import { 
-  Utensils, 
+  Utensils,
   ChefHat, 
   CreditCard, 
   Clock, 
   ShieldAlert, 
-  Users, 
   Bell, 
   X, 
   CheckCircle2, 
@@ -43,6 +44,7 @@ export const Header: React.FC<HeaderProps> = ({ onOpenCart, cartCount = 0, onOpe
     removeNotification,
     signOut
   } = useRestaurant();
+  const { t } = useI18n();
 
   const [timeStr, setTimeStr] = useState<string>('');
   const [dateStr, setDateStr] = useState<string>('');
@@ -63,14 +65,14 @@ export const Header: React.FC<HeaderProps> = ({ onOpenCart, cartCount = 0, onOpe
   const activeKitchenOrdersCount = orders.filter(o => ['NOUVELLE', 'ACCEPTEE', 'EN_PREPARATION'].includes(o.status)).length;
   const readyOrdersCount = orders.filter(o => o.status === 'PRETE').length;
   const currentTable = tables.find(t => t.id === selectedTableId) || tables[0];
-  const currentTableCode = currentTable?.code || 'Table non sélectionnée';
 
   const roleLabels: Partial<Record<UserRole, string>> = {
     CLIENT: 'Espace Client', CUISINE: 'Écran Cuisine (KDS)', CAISSIER: 'Caisse & Tables (POS)',
     EMPLOYE: 'Pointage Personnel', SERVEUR: 'Espace Serveur', POINTAGE: 'Pointage Personnel',
     ADMINISTRATEUR: 'Administration & RH', RESPONSABLE: 'Administration',
   };
-  const activeRoleLabel = isPublicExperience ? 'Espace Client' : roleLabels[currentRole] || 'Espace Umoja';
+  const activeRoleLabel = isPublicExperience ? t('clientSpace') : roleLabels[currentRole] || 'Espace Umoja';
+  const currentTableCode = currentTable?.code || t('tableNotSelected');
   const internalNavItems: { role: UserRole; label: string; icon: React.FC<{ className?: string }>; path: string; badge?: number }[] = [
     { role: 'CUISINE', label: 'Écran Cuisine (KDS)', icon: ChefHat, path: '/kitchen/dashboard', badge: activeKitchenOrdersCount },
     { role: 'CAISSIER', label: 'Caisse & Tables (POS)', icon: CreditCard, path: '/cashier/dashboard', badge: readyOrdersCount },
@@ -83,12 +85,25 @@ export const Header: React.FC<HeaderProps> = ({ onOpenCart, cartCount = 0, onOpe
     return item.role === currentRole || item.role === 'EMPLOYE';
   });
   const canAccessPersonalAttendance = currentRole !== 'CLIENT' && Boolean(currentUser);
+  const showClientWelcome = isPublicExperience || currentRole === 'CLIENT';
 
   return (
-    <header className="sticky top-0 z-40 bg-stone-900 text-stone-100 border-b border-stone-800 shadow-md">
+    <header
+      className={`relative sticky top-0 z-50 text-stone-100 shadow-md ${
+        showClientWelcome
+          ? 'border-b border-amber-500/25 bg-stone-950/95 backdrop-blur-xl'
+          : 'border-b border-stone-800 bg-stone-900'
+      }`}
+    >
+      {showClientWelcome && (
+        <div className="pointer-events-none absolute inset-0 overflow-hidden" aria-hidden>
+          <div className="absolute inset-0 bg-gradient-to-r from-amber-950/50 via-stone-950/30 to-stone-900/40" />
+          <div className="absolute -top-16 left-1/4 h-40 w-72 rounded-full bg-amber-600/15 blur-3xl" />
+        </div>
+      )}
       {/* Top Banner */}
-      <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
-        <div className="flex min-h-16 flex-wrap items-center justify-between gap-2 py-2 sm:flex-nowrap sm:gap-4 sm:py-0">
+      <div className="relative max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
+        <div className="flex min-h-16 flex-wrap items-center justify-between gap-2 overflow-x-hidden py-2 sm:flex-nowrap sm:gap-4 sm:overflow-visible sm:py-0">
           
           {/* Logo & Identity */}
           <div className="flex min-w-0 items-center gap-2 sm:gap-3 cursor-pointer" onClick={() => onNavigate?.('/menu')}>
@@ -140,10 +155,14 @@ export const Header: React.FC<HeaderProps> = ({ onOpenCart, cartCount = 0, onOpe
           {/* Right Controls: Table Selector (if Client), Time, Notifications & Role Switcher */}
           <div className="flex shrink-0 items-center gap-1.5 max-[480px]:w-full max-[480px]:justify-end sm:gap-3">
             
+            {(isPublicExperience || currentRole === 'CLIENT') && (
+              <LanguageSwitcher />
+            )}
+
             {/* Table selector for Client mode */}
             {(isPublicExperience || currentRole === 'CLIENT') && (
               <div className="flex max-w-[128px] items-center gap-1.5 bg-amber-950/40 border border-amber-800/40 px-1.5 py-1 rounded-lg text-xs sm:max-w-none sm:px-2.5">
-                <span className="text-amber-400 font-medium hidden sm:inline">Votre table :</span>
+                <span className="text-amber-400 font-medium hidden sm:inline">{t('yourTable')} :</span>
                 <select
                   value={selectedTableId}
                   onChange={(e) => setSelectedTableId(e.target.value)}
@@ -165,7 +184,7 @@ export const Header: React.FC<HeaderProps> = ({ onOpenCart, cartCount = 0, onOpe
                 className="relative flex items-center gap-1.5 bg-amber-500 hover:bg-amber-400 text-stone-950 font-bold px-3 py-1.5 rounded-lg text-xs transition shadow-md shadow-amber-900/30"
               >
                 <ShoppingBag className="w-4 h-4" />
-                <span className="hidden sm:inline">Panier</span>
+                <span className="hidden sm:inline">{t('cart')}</span>
                 {cartCount > 0 && (
                   <span className="bg-stone-950 text-amber-300 text-[10px] font-extrabold px-1.5 py-0.5 rounded-full">
                     {cartCount}
@@ -344,6 +363,17 @@ export const Header: React.FC<HeaderProps> = ({ onOpenCart, cartCount = 0, onOpe
 
           </div>
         </div>
+
+        {showClientWelcome && (
+          <div className="relative z-10 border-t border-amber-500/20 px-1 pb-4 pt-3 sm:px-0 sm:py-5">
+            <p className="text-center text-[10px] font-bold uppercase tracking-[0.22em] text-amber-400 sm:tracking-[0.32em]">
+              {t('welcomeKicker')}
+            </p>
+            <h1 className="mx-auto mt-1.5 max-w-[18.5rem] text-center font-serif text-[1.25rem] font-semibold leading-tight tracking-tight text-stone-50 break-words sm:max-w-none sm:text-3xl md:text-[2.15rem] [text-shadow:0_2px_18px_rgba(0,0,0,0.45)]">
+              {t('welcomeTitle')}
+            </h1>
+          </div>
+        )}
       </div>
     </header>
   );

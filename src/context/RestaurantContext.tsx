@@ -109,6 +109,7 @@ interface RestaurantContextType {
     reference?: string, 
     note?: string
   ) => Promise<{ success: boolean; isFullyPaid: boolean; remaining: number }>;
+  cancelPaidSale: (invoiceId: string) => Promise<boolean>;
 
   // Menu & Products
   addProduct: (product: Omit<Product, 'id'>) => Promise<void>;
@@ -704,13 +705,68 @@ export const RestaurantProvider: React.FC<{ children: React.ReactNode }> = ({ ch
   }, [authEmail, currentRole, categories, addNotification]);
 
   useEffect(() => {
+    if (!currentUser?.id) return;
+    let mounted = true;
+    const loadOwnAttendance = async () => {
+      const { data, error } = await supabase
+        .from('attendance_records')
+        .select('*')
+        .eq('employee_id', currentUser.id)
+        .order('created_at', { ascending: false })
+        .limit(80);
+      if (!mounted) return;
+      if (error) {
+        try {
+          const raw = localStorage.getItem('umoja_attendance_fallback_v1');
+          if (!raw) return;
+          const stored = JSON.parse(raw) as AttendanceRecord[];
+          setAttendanceRecords(previous => {
+            const byId = new Map<string, AttendanceRecord>(previous.map(record => [record.id, record]));
+            stored.filter(record => record.employeeId === currentUser.id).forEach(record => byId.set(record.id, record));
+            return Array.from(byId.values()).sort((a, b) => b.timestamp - a.timestamp);
+          });
+        } catch {
+          /* ignore */
+        }
+        return;
+      }
+      const mapped: AttendanceRecord[] = (data || []).map((row: any) => ({
+        id: row.id,
+        employeeId: row.employee_id,
+        matricule: currentUser.matricule,
+        employeeName: `${currentUser.prenom} ${currentUser.nom}`,
+        employeePhoto: currentUser.photo,
+        employeePosition: currentUser.poste,
+        date: row.date,
+        time: row.time,
+        type: row.type,
+        timestamp: new Date(row.created_at).getTime(),
+        scheduledTime: currentUser.scheduledShiftStart || '',
+        delayMinutes: row.delay_minutes,
+        status: row.status,
+        isManualCorrection: row.is_manual_correction,
+        correctionReason: row.correction_reason,
+      }));
+      setAttendanceRecords(previous => {
+        const byId = new Map<string, AttendanceRecord>(previous.map(record => [record.id, record]));
+        mapped.forEach(record => byId.set(record.id, record));
+        return Array.from(byId.values()).sort((a, b) => b.timestamp - a.timestamp);
+      });
+    };
+    void loadOwnAttendance();
+    return () => { mounted = false; };
+  }, [currentUser]);
+
+  useEffect(() => {
     let mounted = true;
 
     const refreshOperationalData = async () => {
-      const [tablesResult, sessionsResult, joinedOrdersResult] = await Promise.all([
+      const [tablesResult, sessionsResult, joinedOrdersResult, invoicesResult, attendanceResult] = await Promise.all([
         supabase.from('restaurant_tables').select('*').order('code'),
         supabase.from('table_sessions').select('*').order('opened_at', { ascending: false }).limit(300),
         supabase.from('orders').select(CASHIER_ORDERS_SELECT).order('created_at', { ascending: false }),
+        supabase.from('invoices').select('*').order('created_at', { ascending: false }).limit(400),
+        supabase.from('attendance_records').select('*').order('created_at', { ascending: false }).limit(200),
       ]);
       if (!mounted) return;
 
@@ -752,6 +808,55 @@ export const RestaurantProvider: React.FC<{ children: React.ReactNode }> = ({ ch
       if (mappedOrders.length || !joinedOrdersResult.error) {
         setOrders(mappedOrders);
       }
+      if (invoicesResult.data) {
+        setInvoices(invoicesResult.data.map((row: any) => ({
+          id: row.id,
+          invoiceNumber: row.invoice_number,
+          sessionId: row.table_session_id || '',
+          tableId: row.table_id || '',
+          tableCode: row.table_code || '',
+          orderIds: row.order_ids || [],
+          items: [],
+          subtotal: Number(row.subtotal),
+          discountAmount: Number(row.discount_amount),
+          taxAmount: Number(row.tax_amount),
+          totalAmount: Number(row.total_amount),
+          paidAmount: Number(row.paid_amount),
+          remainingAmount: Math.max(0, Number(row.total_amount) - Number(row.paid_amount)),
+          status: row.status,
+          createdAt: row.created_at,
+          paidAt: row.paid_at || undefined,
+          cashierName: row.cashier_name || '',
+          paymentMethod: row.payment_method || undefined,
+          paymentReference: row.payment_reference || undefined,
+        })));
+      }
+      if (attendanceResult.data) {
+        setAttendanceRecords(previous => {
+          const byId = new Map<string, AttendanceRecord>(previous.map(record => [record.id, record]));
+          (attendanceResult.data as any[]).forEach(row => {
+            const existing = byId.get(row.id);
+            byId.set(row.id, {
+              id: row.id,
+              employeeId: row.employee_id,
+              matricule: existing?.matricule || '',
+              employeeName: existing?.employeeName || 'Employé',
+              employeePhoto: existing?.employeePhoto || '',
+              employeePosition: existing?.employeePosition || '',
+              date: row.date,
+              time: row.time,
+              type: row.type,
+              timestamp: new Date(row.created_at).getTime(),
+              scheduledTime: existing?.scheduledTime || '',
+              delayMinutes: row.delay_minutes,
+              status: row.status,
+              isManualCorrection: row.is_manual_correction,
+              correctionReason: row.correction_reason,
+            });
+          });
+          return Array.from(byId.values()).sort((a, b) => b.timestamp - a.timestamp);
+        });
+      }
     };
 
     void refreshOperationalData();
@@ -761,6 +866,12 @@ export const RestaurantProvider: React.FC<{ children: React.ReactNode }> = ({ ch
       .on('postgres_changes', { event: '*', schema: 'public', table: 'orders' }, refreshOperationalData)
       .on('postgres_changes', { event: '*', schema: 'public', table: 'order_items' }, refreshOperationalData)
       .on('postgres_changes', { event: '*', schema: 'public', table: 'invoices' }, refreshOperationalData)
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'products' }, async () => {
+        const { data } = await supabase.from('products').select('*').order('display_order');
+        if (!mounted || !data) return;
+        setProducts((data as SupabaseProductRow[]).map(productFromSupabase));
+      })
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'attendance_records' }, refreshOperationalData)
       .subscribe();
 
     return () => {
@@ -1449,6 +1560,49 @@ export const RestaurantProvider: React.FC<{ children: React.ReactNode }> = ({ ch
     return { success: true, isFullyPaid, remaining };
   }, [invoices, currentUser, logAudit, addNotification]);
 
+  const cancelPaidSale = useCallback(async (invoiceId: string): Promise<boolean> => {
+    if (currentRole !== 'ADMINISTRATEUR' && currentRole !== 'RESPONSABLE') {
+      addNotification('L’annulation d’une vente est réservée à l’administrateur.', 'error');
+      return false;
+    }
+    const invoice = invoices.find(item => item.id === invoiceId);
+    if (!invoice) {
+      addNotification('Transaction introuvable.', 'error');
+      return false;
+    }
+    if (invoice.status === 'ANNULEE') return false;
+
+    const { error: invoiceError } = await supabase.from('invoices').update({ status: 'ANNULEE' }).eq('id', invoiceId);
+    if (invoiceError) {
+      addNotification(`Annulation non enregistrée : ${invoiceError.message}`, 'error');
+      return false;
+    }
+
+    const billedOrderIds = (invoice.orderIds || []).filter(Boolean);
+    if (billedOrderIds.length > 0) {
+      const { error: ordersError } = await supabase.from('orders').update({ status: 'ANNULEE' }).in('id', billedOrderIds);
+      if (ordersError) {
+        addNotification(`Commandes liées non annulées : ${ordersError.message}`, 'warning');
+      } else {
+        setOrders(prev => prev.map(order => billedOrderIds.includes(order.id) ? { ...order, status: 'ANNULEE' } : order));
+      }
+    }
+
+    setInvoices(prev => prev.map(item => (
+      item.id === invoiceId ? { ...item, status: 'ANNULEE' as const } : item
+    )));
+    logAudit(
+      'ANNULATION_VENTE',
+      'Invoice',
+      invoiceId,
+      'PAYEE',
+      'ANNULEE',
+      `Annulation de ${invoice.invoiceNumber} (${invoice.paidAmount} FC). CA et bénéfice recalculés.`
+    );
+    addNotification(`Vente ${invoice.invoiceNumber} annulée. Le chiffre d’affaires a été mis à jour.`, 'warning');
+    return true;
+  }, [currentRole, invoices, logAudit, addNotification]);
+
   // Product Management
   const addProduct = useCallback(async (product: Omit<Product, 'id'>) => {
     const newProduct: Product = {
@@ -1508,8 +1662,11 @@ export const RestaurantProvider: React.FC<{ children: React.ReactNode }> = ({ ch
     }
     setProducts(prev => prev.map(p => {
       if (p.id === id) {
-        logAudit('DISPONIBILITE_PRODUIT', 'Product', id, String(p.available), String(nextAvailable), `Disponibilité de ${p.name}: ${nextAvailable ? 'Disponible' : 'Épuisé'}`);
-        addNotification(`${p.name} est désormais ${nextAvailable ? 'DISPONIBLE' : 'ÉPUISÉ'}.`, nextAvailable ? 'info' : 'warning');
+        logAudit('DISPONIBILITE_PRODUIT', 'Product', id, String(p.available), String(nextAvailable), `Carte client : ${p.name} ${nextAvailable ? 'visible' : 'masqué'}`);
+        addNotification(
+          nextAvailable ? `${p.name} est de nouveau visible dans l’Espace Client.` : `${p.name} est masqué de la carte client.`,
+          nextAvailable ? 'info' : 'warning'
+        );
         return { ...p, available: nextAvailable };
       }
       return p;
@@ -1738,7 +1895,18 @@ export const RestaurantProvider: React.FC<{ children: React.ReactNode }> = ({ ch
       delay_minutes: record.delayMinutes,
       validation_method: 'PIN',
     });
-    if (error) return { success: false, message: `Pointage non enregistré dans Supabase : ${error.message}` };
+    if (error) {
+      const missingTable = /does not exist|schema cache|could not find the table/i.test(error.message);
+      if (!missingTable) return { success: false, message: `Pointage non enregistré dans Supabase : ${error.message}` };
+      try {
+        const raw = localStorage.getItem('umoja_attendance_fallback_v1');
+        const stored = raw ? JSON.parse(raw) as AttendanceRecord[] : [];
+        localStorage.setItem('umoja_attendance_fallback_v1', JSON.stringify([record, ...stored].slice(0, 200)));
+      } catch {
+        /* ignore storage */
+      }
+      addNotification('Table distante indisponible : pointage conservé localement.', 'warning');
+    }
 
     setAttendanceRecords(prev => [record, ...prev]);
 
@@ -1972,6 +2140,7 @@ export const RestaurantProvider: React.FC<{ children: React.ReactNode }> = ({ ch
         generateInvoiceForTable,
         generateInvoiceForOrders,
         recordPayment,
+        cancelPaidSale,
 
         addProduct,
         updateProduct,

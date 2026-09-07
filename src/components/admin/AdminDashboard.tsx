@@ -1,18 +1,14 @@
-import React from 'react';
+import React, { useState } from 'react';
 import { useRestaurant } from '../../context/RestaurantContext';
-import { formatFC } from '../../utils/formatters';
+import { formatFC, formatDateTime } from '../../utils/formatters';
+import { paymentMethodLabel } from '../../lib/cashierOrders';
 import { 
   DollarSign, 
   TrendingUp, 
-  ShoppingBag, 
   Users, 
-  CreditCard, 
-  Utensils, 
-  Calendar, 
-  Clock, 
-  AlertTriangle,
   Sparkles,
-  Layers
+  Trash2,
+  X
 } from 'lucide-react';
 import { 
   AreaChart, 
@@ -39,8 +35,13 @@ export const AdminDashboard: React.FC = () => {
     tables, 
     employees, 
     attendanceRecords, 
-    products 
+    products,
+    currentRole,
+    cancelPaidSale,
   } = useRestaurant();
+
+  const [saleToCancel, setSaleToCancel] = useState<string | null>(null);
+  const [isCancelling, setIsCancelling] = useState(false);
 
   // Financial KPIs
   const paidInvoices = invoices.filter(i => i.status === 'PAYEE');
@@ -70,7 +71,7 @@ export const AdminDashboard: React.FC = () => {
 
   // Top Selling Dishes Breakdown
   const productSalesMap = new Map<string, { name: string; count: number; revenue: number }>();
-  orders.forEach(order => {
+  orders.filter(order => order.status !== 'ANNULEE').forEach(order => {
     order.items.forEach(it => {
       if (productSalesMap.has(it.productName)) {
         const item = productSalesMap.get(it.productName)!;
@@ -90,6 +91,19 @@ export const AdminDashboard: React.FC = () => {
     .sort((a, b) => b.count - a.count)
     .slice(0, 5);
 
+  const isAdmin = currentRole === 'ADMINISTRATEUR' || currentRole === 'RESPONSABLE';
+  const saleTransactions = [...invoices]
+    .filter(invoice => invoice.status === 'PAYEE' || invoice.status === 'ANNULEE')
+    .sort((a, b) => b.createdAt.localeCompare(a.createdAt));
+  const pendingCancel = invoices.find(invoice => invoice.id === saleToCancel);
+
+  const confirmCancelSale = async () => {
+    if (!saleToCancel) return;
+    setIsCancelling(true);
+    const ok = await cancelPaidSale(saleToCancel);
+    setIsCancelling(false);
+    if (ok) setSaleToCancel(null);
+  };
   const todayStr = new Date().toISOString().split('T')[0];
   const todayAttendances = attendanceRecords.filter(a => a.date === todayStr);
   const presentEmployeesCount = new Set(todayAttendances.filter(a => a.type === 'ENTREE').map(a => a.matricule)).size;
@@ -162,6 +176,71 @@ export const AdminDashboard: React.FC = () => {
           </div>
         </div>
 
+      </div>
+
+      <div className="bg-stone-900 border border-stone-800 rounded-2xl overflow-hidden shadow-xl">
+        <div className="flex items-center justify-between border-b border-stone-800 px-5 py-3">
+          <div>
+            <h3 className="font-bold text-sm text-stone-100">Ventes & transactions encaissées</h3>
+            <p className="text-xs text-stone-400">Annuler une vente retire son montant du CA et du bénéfice net.</p>
+          </div>
+        </div>
+        <div className="overflow-x-auto">
+          <table className="w-full text-xs text-left text-stone-300">
+            <thead className="bg-stone-950 text-stone-400 uppercase text-[10px] font-mono">
+              <tr>
+                <th className="py-3 px-4">Date</th>
+                <th className="py-3 px-4">Facture</th>
+                <th className="py-3 px-4">Table</th>
+                <th className="py-3 px-4">Paiement</th>
+                <th className="py-3 px-4">Montant</th>
+                <th className="py-3 px-4">Statut</th>
+                {isAdmin && <th className="py-3 px-4 text-right">Action</th>}
+              </tr>
+            </thead>
+            <tbody className="divide-y divide-stone-800/80">
+              {saleTransactions.length === 0 && (
+                <tr>
+                  <td colSpan={isAdmin ? 7 : 6} className="py-10 text-center text-stone-500">Aucune vente enregistrée.</td>
+                </tr>
+              )}
+              {saleTransactions.map(invoice => {
+                const cancelled = invoice.status === 'ANNULEE';
+                return (
+                  <tr key={invoice.id} className={cancelled ? 'bg-stone-950/40 opacity-60' : 'hover:bg-stone-800/40'}>
+                    <td className="py-3 px-4 text-stone-400 whitespace-nowrap">{formatDateTime(invoice.paidAt || invoice.createdAt)}</td>
+                    <td className="py-3 px-4 font-mono font-semibold text-stone-100">{invoice.invoiceNumber}</td>
+                    <td className="py-3 px-4">{invoice.tableCode || '—'}</td>
+                    <td className="py-3 px-4">{paymentMethodLabel(invoice.paymentMethod)}</td>
+                    <td className={`py-3 px-4 font-mono font-bold ${cancelled ? 'line-through text-stone-500' : 'text-emerald-400'}`}>
+                      {formatFC(Number(invoice.paidAmount || invoice.totalAmount || 0))}
+                    </td>
+                    <td className="py-3 px-4">
+                      <span className={`rounded-full px-2 py-0.5 text-[10px] font-bold ${cancelled ? 'bg-rose-950 text-rose-300' : 'bg-emerald-950 text-emerald-300'}`}>
+                        {cancelled ? 'Annulée' : 'Payée'}
+                      </span>
+                    </td>
+                    {isAdmin && (
+                      <td className="py-3 px-4 text-right">
+                        {!cancelled && (
+                          <button
+                            type="button"
+                            onClick={() => setSaleToCancel(invoice.id)}
+                            className="inline-flex items-center gap-1.5 rounded-lg border border-rose-800/60 bg-rose-950/70 px-2.5 py-1.5 text-[11px] font-bold text-rose-300 transition hover:bg-rose-900 hover:text-rose-100"
+                            title="Supprimer / Annuler la transaction"
+                          >
+                            <Trash2 className="h-3.5 w-3.5" />
+                            Annuler
+                          </button>
+                        )}
+                      </td>
+                    )}
+                  </tr>
+                );
+              })}
+            </tbody>
+          </table>
+        </div>
       </div>
 
       {/* Visual Charts Grid */}
@@ -277,6 +356,38 @@ export const AdminDashboard: React.FC = () => {
           ))}
         </div>
       </div>
+
+      {pendingCancel && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/80 p-4">
+          <div className="w-full max-w-md rounded-2xl border border-stone-700 bg-stone-900 p-5 shadow-2xl">
+            <div className="mb-3 flex items-start justify-between gap-3">
+              <h3 className="text-sm font-bold text-stone-100">Annuler cette vente ?</h3>
+              <button type="button" onClick={() => setSaleToCancel(null)} className="p-1 text-stone-400 hover:text-white">
+                <X className="h-4 w-4" />
+              </button>
+            </div>
+            <p className="text-sm text-stone-300">
+              Êtes-vous sûr de vouloir supprimer cette vente ? Cela recalculera le chiffre d’affaires et le solde.
+            </p>
+            <p className="mt-2 font-mono text-xs text-amber-300">
+              {pendingCancel.invoiceNumber} · {formatFC(Number(pendingCancel.paidAmount || pendingCancel.totalAmount || 0))}
+            </p>
+            <div className="mt-5 flex justify-end gap-2">
+              <button type="button" onClick={() => setSaleToCancel(null)} className="rounded-xl bg-stone-800 px-4 py-2 text-xs font-bold text-stone-200">
+                Non, conserver
+              </button>
+              <button
+                type="button"
+                disabled={isCancelling}
+                onClick={() => void confirmCancelSale()}
+                className="rounded-xl bg-rose-600 px-4 py-2 text-xs font-bold text-white hover:bg-rose-500 disabled:opacity-50"
+              >
+                {isCancelling ? 'Annulation…' : 'Oui, supprimer / annuler'}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
 
     </div>
   );

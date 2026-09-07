@@ -1,5 +1,6 @@
 import React from 'react';
 import { useRestaurant } from '../../context/RestaurantContext';
+import { useI18n } from '../../context/LanguageContext';
 import { OrderStatus } from '../../types';
 import { formatFC, formatTimeOnly } from '../../utils/formatters';
 import { 
@@ -17,14 +18,15 @@ import {
 
 export const ClientOrderTracker: React.FC = () => {
   const { selectedTableId, tables, orders, tableSessions, addNotification, updateTableStatus } = useRestaurant();
+  const { t, translateDish } = useI18n();
 
   const currentTable = tables.find(t => t.id === selectedTableId) || tables[0];
   if (!currentTable) {
     return (
       <div className="bg-stone-900/60 border border-stone-800 rounded-3xl p-7 text-center text-stone-400">
         <UtensilsCrossed className="w-11 h-11 mx-auto text-stone-600 mb-3" />
-        <h4 className="text-sm font-semibold text-stone-200">Votre table arrive</h4>
-        <p className="text-xs text-stone-500 mt-1.5 leading-relaxed">La sélection de table s’affichera dès que la salle est prête.</p>
+        <h4 className="text-sm font-semibold text-stone-200">{t('tableArriving')}</h4>
+        <p className="text-xs text-stone-500 mt-1.5 leading-relaxed">{t('tableArrivingHint')}</p>
       </div>
     );
   }
@@ -63,20 +65,20 @@ export const ClientOrderTracker: React.FC = () => {
   };
 
   const steps = [
-    { step: 1, label: 'Reçue', icon: Clock, desc: 'Envoyée en cuisine' },
-    { step: 2, label: 'Acceptée', icon: Sparkles, desc: 'Prise en charge' },
-    { step: 3, label: 'En Préparation', icon: Flame, desc: 'Cuisson aux fourneaux' },
-    { step: 4, label: 'Prête', icon: ChefHat, desc: 'Prête au passe' },
-    { step: 5, label: 'Servie', icon: CheckCircle2, desc: 'Bon appétit !' },
+    { step: 1, label: t('stepReceived'), icon: Clock, desc: '' },
+    { step: 2, label: t('stepAccepted'), icon: Sparkles, desc: '' },
+    { step: 3, label: t('stepCooking'), icon: Flame, desc: '' },
+    { step: 4, label: t('stepReady'), icon: ChefHat, desc: '' },
+    { step: 5, label: t('stepServed'), icon: CheckCircle2, desc: '' },
   ];
 
   if (sessionOrders.length === 0) {
     return (
       <div className="bg-stone-900/60 border border-stone-800 rounded-3xl p-7 text-center text-stone-400">
         <UtensilsCrossed className="w-11 h-11 mx-auto text-stone-600 mb-3" />
-        <h4 className="text-sm font-semibold text-stone-200">Encore rien en cuisine pour {currentTable.code}</h4>
+        <h4 className="text-sm font-semibold text-stone-200">{t('nothingInKitchen')} {currentTable.code}</h4>
         <p className="text-xs text-stone-500 mt-1.5 leading-relaxed">
-          Feuilletez la carte ci-dessous : dès que vous envoyez, le suivi s’allume ici.
+          {t('nothingHint')}
         </p>
       </div>
     );
@@ -92,13 +94,13 @@ export const ClientOrderTracker: React.FC = () => {
           </div>
           <div>
             <div className="flex items-center gap-2">
-              <h3 className="text-sm font-semibold text-stone-100">Votre commande, en direct</h3>
+              <h3 className="text-sm font-semibold text-stone-100">{t('liveOrder')}</h3>
               <span className="px-2.5 py-0.5 rounded-full text-[10px] font-bold bg-amber-500/20 text-amber-300 border border-amber-500/40">
                 {currentTable.code}
               </span>
             </div>
             <p className="text-[11px] text-stone-400 mt-0.5">
-              {sessionOrders.length} passage{sessionOrders.length > 1 ? 's' : ''} vers les fourneaux
+              {sessionOrders.length} {t('passages')}
             </p>
           </div>
         </div>
@@ -110,14 +112,14 @@ export const ClientOrderTracker: React.FC = () => {
             className="flex items-center gap-1.5 min-h-10 px-3.5 py-2 rounded-xl bg-stone-800 hover:bg-stone-700 text-stone-300 text-xs font-semibold border border-stone-700 transition"
           >
             <BellRing className="w-3.5 h-3.5 text-amber-400" />
-            <span>Appeler le service</span>
+            <span>{t('callService')}</span>
           </button>
           <button
             onClick={handleRequestBill}
             className="flex items-center gap-1.5 min-h-10 px-3.5 py-2 rounded-xl bg-amber-600/20 hover:bg-amber-600/30 text-amber-300 text-xs font-semibold border border-amber-600/40 transition"
           >
             <Receipt className="w-3.5 h-3.5 text-amber-400" />
-            <span>L’addition, s’il vous plaît</span>
+            <span>{t('requestBill')}</span>
           </button>
         </div>
       </div>
@@ -137,7 +139,7 @@ export const ClientOrderTracker: React.FC = () => {
                 <div className="flex items-center gap-2">
                   <span className="font-mono text-xs font-bold text-amber-400">{order.orderNumber}</span>
                   <span className="text-[11px] text-stone-400">
-                    • Passée à {formatTimeOnly(order.createdAt)}
+                    • {t('placedAt')} {formatTimeOnly(order.createdAt)}
                   </span>
                 </div>
                 <div className="text-xs font-extrabold font-mono text-stone-200">
@@ -186,23 +188,23 @@ export const ClientOrderTracker: React.FC = () => {
               {/* Items Summary */}
               <div className="pt-2 border-t border-stone-800/80 flex flex-wrap items-center justify-between text-xs text-stone-400 gap-2">
                 <div className="truncate max-w-md">
-                  {order.items.map(it => `${it.quantity}x ${it.productName}`).join(' • ')}
+                  {order.items.map(it => `${it.quantity}x ${translateDish(it.productName)}`).join(' • ')}
                 </div>
                 <div className="shrink-0 font-medium">
                   {order.status === 'PRETE' ? (
                     <span className="text-amber-400 font-bold animate-pulse flex items-center gap-1">
-                      <Sparkles className="w-3.5 h-3.5" /> En cours d'acheminement à votre table
+                      <Sparkles className="w-3.5 h-3.5" /> {t('onTheWay')}
                     </span>
                   ) : order.status === 'EN_PREPARATION' ? (
                     <span className="text-amber-300/90 flex items-center gap-1">
-                      <Flame className="w-3.5 h-3.5 text-amber-500" /> En cuisine
+                      <Flame className="w-3.5 h-3.5 text-amber-500" /> {t('inKitchen')}
                     </span>
                   ) : order.status === 'SERVIE' ? (
                     <span className="text-emerald-400 flex items-center gap-1">
-                      <CheckCircle2 className="w-3.5 h-3.5" /> Servie
+                      <CheckCircle2 className="w-3.5 h-3.5" /> {t('served')}
                     </span>
                   ) : (
-                    <span className="text-stone-400">En attente de prise en charge</span>
+                    <span className="text-stone-400">{t('waiting')}</span>
                   )}
                 </div>
               </div>

@@ -1,5 +1,6 @@
 import React, { useState } from 'react';
 import { useRestaurant } from '../../context/RestaurantContext';
+import { useI18n } from '../../context/LanguageContext';
 import { Product } from '../../types';
 import { DEFAULT_FOOD_IMAGE, formatFC, handleImageError } from '../../utils/formatters';
 import { 
@@ -41,6 +42,7 @@ export const CartDrawer: React.FC<CartDrawerProps> = ({
   onOrderSuccess,
 }) => {
   const { tables, selectedTableId, setSelectedTableId, placeClientOrder } = useRestaurant();
+  const { t, translateDish } = useI18n();
 
   const [clientName, setClientName] = useState('');
   const [specialInstructions, setSpecialInstructions] = useState('');
@@ -51,7 +53,7 @@ export const CartDrawer: React.FC<CartDrawerProps> = ({
   const totalAmount = cartItems.reduce((sum, item) => sum + item.product.price * item.quantity, 0);
   const totalItemsCount = cartItems.reduce((sum, item) => sum + item.quantity, 0);
   const currentTable = tables.find(t => t.id === selectedTableId) || tables[0];
-  const currentTableCode = currentTable?.code || 'Table non sélectionnée';
+  const currentTableCode = currentTable?.code || t('tableNotSelected');
 
   const handleSubmitOrder = async () => {
     if (cartItems.length === 0) return;
@@ -70,7 +72,7 @@ export const CartDrawer: React.FC<CartDrawerProps> = ({
       onOrderSuccess(order.id);
     } catch (error) {
       console.error(error);
-      window.alert(error instanceof Error ? error.message : 'La commande n’a pas pu être enregistrée.');
+      window.alert(error instanceof Error ? error.message : t('orderFailed'));
     } finally {
       setIsSubmitting(false);
     }
@@ -94,9 +96,9 @@ export const CartDrawer: React.FC<CartDrawerProps> = ({
                 <ShoppingBag className="w-5 h-5" />
               </div>
               <div>
-                <h2 className="text-lg font-bold tracking-tight text-stone-100">Votre plateau</h2>
+                <h2 className="text-lg font-bold tracking-tight text-stone-100">{t('yourPlate')}</h2>
                 <p className="text-xs font-medium text-stone-400">
-                  {totalItemsCount} saveur{totalItemsCount > 1 ? 's' : ''} prête{totalItemsCount > 1 ? 's' : ''} à partir
+                  {totalItemsCount} {t('flavorsReady')}
                 </p>
               </div>
             </div>
@@ -112,7 +114,7 @@ export const CartDrawer: React.FC<CartDrawerProps> = ({
           <div className="px-6 py-4 bg-amber-950/20 border-b border-amber-900/30 flex items-center justify-between gap-3">
             <div className="flex items-center gap-2 text-xs">
               <Utensils className="w-4 h-4 text-amber-400" />
-              <span className="text-stone-300 font-medium">Votre table</span>
+              <span className="text-stone-300 font-medium">{t('yourTable')}</span>
             </div>
             <select
               value={selectedTableId}
@@ -132,9 +134,9 @@ export const CartDrawer: React.FC<CartDrawerProps> = ({
             {cartItems.length === 0 ? (
               <div className="h-full flex flex-col items-center justify-center text-center p-6 text-stone-500">
                 <ShoppingBag className="w-16 h-16 text-stone-700 mb-4 stroke-[1.5]" />
-                <p className="text-lg font-semibold text-stone-300">Votre plateau est encore vide</p>
+                <p className="text-lg font-semibold text-stone-300">{t('plateEmpty')}</p>
                 <p className="text-sm text-stone-500 mt-2 max-w-xs leading-relaxed">
-                  Choisissez un plat qui vous fait de l’œil : un tap, et il rejoint votre commande.
+                  {t('plateEmptyHint')}
                 </p>
               </div>
             ) : (
@@ -146,7 +148,7 @@ export const CartDrawer: React.FC<CartDrawerProps> = ({
                   >
                     <img
                       src={item.product.photo || DEFAULT_FOOD_IMAGE}
-                      alt={item.product.name}
+                      alt={translateDish(item.product.name)}
                       referrerPolicy="no-referrer"
                       onError={handleImageError}
                       loading="lazy"
@@ -157,7 +159,7 @@ export const CartDrawer: React.FC<CartDrawerProps> = ({
                     <div className="flex-1 min-w-0">
                       <div className="flex items-start justify-between gap-2">
                         <h4 className="text-sm font-semibold text-stone-100 line-clamp-1 tracking-tight">
-                          {item.product.name}
+                          {translateDish(item.product.name)}
                         </h4>
                         <button
                           onClick={() => onRemoveItem(index)}
@@ -181,7 +183,7 @@ export const CartDrawer: React.FC<CartDrawerProps> = ({
                       {/* Quantity control */}
                       <div className="flex items-center justify-between mt-3 pt-2 border-t border-stone-800/80">
                         <span className="text-[11px] text-stone-500 font-medium">
-                          {formatFC(item.product.price)} l’unité
+                          {formatFC(item.product.price)} {t('perUnit')}
                         </span>
 
                         <div className="flex items-center gap-1 bg-stone-900 border border-stone-700/80 rounded-xl px-1 py-0.5">
@@ -213,7 +215,7 @@ export const CartDrawer: React.FC<CartDrawerProps> = ({
               <div className="pt-3 space-y-3.5 border-t border-stone-800">
                 <div>
                   <label className="text-xs font-semibold text-stone-300 block mb-1.5">
-                    Pour qui est cette table ? <span className="font-medium text-stone-500">(optionnel)</span>
+                    {t('forWhom')} <span className="font-medium text-stone-500">({t('optional')})</span>
                   </label>
                   <input
                     type="text"
@@ -226,7 +228,7 @@ export const CartDrawer: React.FC<CartDrawerProps> = ({
 
                 <div>
                   <label className="text-xs font-semibold text-stone-300 block mb-1.5">
-                    Un mot pour le service
+                    {t('wordForService')}
                   </label>
                   <textarea
                     rows={2}
@@ -245,15 +247,15 @@ export const CartDrawer: React.FC<CartDrawerProps> = ({
             <div className="p-6 bg-stone-950 border-t border-stone-800 space-y-4 shrink-0">
               <div className="space-y-2 text-sm">
                 <div className="flex justify-between text-stone-400">
-                  <span className="font-medium">Sous-total ({totalItemsCount} plats)</span>
+                  <span className="font-medium">{t('subtotal')} ({totalItemsCount} {t('dishes')})</span>
                   <span className="font-mono text-stone-300 font-semibold">{formatFC(totalAmount)}</span>
                 </div>
                 <div className="flex justify-between text-stone-400">
-                  <span className="font-medium">Service</span>
-                  <span className="font-mono text-stone-300">Inclus</span>
+                  <span className="font-medium">{t('service')}</span>
+                  <span className="font-mono text-stone-300">{t('included')}</span>
                 </div>
                 <div className="flex justify-between text-lg font-extrabold text-stone-100 pt-3 border-t border-stone-800">
-                  <span>Total de votre table</span>
+                  <span>{t('tableTotal')}</span>
                   <span className="text-amber-400 font-mono">{formatFC(totalAmount)}</span>
                 </div>
               </div>
@@ -266,18 +268,18 @@ export const CartDrawer: React.FC<CartDrawerProps> = ({
                 {isSubmitting ? (
                   <>
                     <Clock className="w-4 h-4 animate-spin" />
-                    Envoi vers les fourneaux…
+                    {t('sendingKitchen')}
                   </>
                 ) : (
                   <>
                     <CheckCircle className="w-4 h-4" />
-                    Envoyer en cuisine · {currentTableCode}
+                    {t('sendKitchen')} · {currentTableCode}
                   </>
                 )}
               </button>
 
               <p className="text-[11px] text-center text-stone-500 leading-relaxed">
-                Un tap, et la cuisine Umoja s’en occupe. Vous suivez la préparation en direct.
+                {t('tapHint')}
               </p>
             </div>
           )}
