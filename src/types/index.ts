@@ -167,15 +167,17 @@ export interface TableSession {
   customerCount: number;
 }
 
-export type PaymentMethod = 
-  | 'ESPECES' 
-  | 'M_PESA' 
-  | 'AIRTEL_MONEY' 
-  | 'ORANGE_MONEY' 
-  | 'BANQUE' 
-  | 'CARTE' 
+export type PaymentMethod =
+  | 'ESPECES'
+  | 'WECHAT'
+  | 'ALIPAY'
+  | 'BANQUE'
+  | 'CARTE'
+  | 'AUTRE'
   | 'QR_CODE'
-  | 'AUTRE';
+  | 'M_PESA'
+  | 'AIRTEL_MONEY'
+  | 'ORANGE_MONEY';
 
 export interface PaymentTransaction {
   id: string;

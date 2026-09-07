@@ -309,7 +309,7 @@ export const ReportsManager: React.FC = () => {
             </div>
 
             <div className="bg-stone-950 p-4 rounded-xl border border-stone-800">
-              <span className="text-xs text-rose-400 font-bold block">Mobile Money</span>
+              <span className="text-xs text-emerald-400 font-bold block">WeChat / Alipay</span>
               <div className="text-xl font-mono font-black text-stone-100 mt-1">{formatFC(cashRegister.totalSalesMobile)}</div>
             </div>
 

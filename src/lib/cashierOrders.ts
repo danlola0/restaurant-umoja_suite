@@ -5,14 +5,16 @@ export const ALIPAY_PAY_QR_SRC = '/payments/alipay-pay.jpg';
 export const LAKALA_PAY_QR_SRC = ALIPAY_PAY_QR_SRC;
 
 export const PAYMENT_METHOD_LABELS: Record<PaymentMethod, string> = {
-  ESPECES: 'Cash / Espèces',
-  M_PESA: 'M-Pesa',
-  AIRTEL_MONEY: 'Airtel Money',
-  ORANGE_MONEY: 'Orange Money',
-  BANQUE: 'Banque / Virement',
-  CARTE: 'Carte / UnionPay',
-  QR_CODE: 'WeChat Pay / Alipay',
-  AUTRE: 'Autre',
+  ESPECES: 'Cash / 现金',
+  WECHAT: 'WeChat',
+  ALIPAY: 'Alipay',
+  BANQUE: 'Bank transfer',
+  CARTE: 'UnionPay / Card',
+  AUTRE: 'Other',
+  QR_CODE: 'WeChat / Alipay',
+  M_PESA: 'WeChat',
+  AIRTEL_MONEY: 'Alipay',
+  ORANGE_MONEY: 'Alipay',
 };
 
 export function paymentMethodLabel(method?: PaymentMethod | string): string {

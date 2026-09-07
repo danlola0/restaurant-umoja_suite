@@ -157,7 +157,7 @@ export const CashRegisterManager: React.FC = () => {
         <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
           <div className="bg-stone-950/70 border border-stone-800 rounded-xl p-3.5 flex items-center justify-between">
             <div>
-              <span className="text-xs text-rose-400 font-bold block">Mobile Money (M-Pesa, Airtel, Orange)</span>
+              <span className="text-xs text-emerald-400 font-bold block">WeChat / Alipay</span>
               <span className="text-base font-mono font-black text-stone-100">{formatFC(cashRegister.totalSalesMobile)}</span>
             </div>
           </div>

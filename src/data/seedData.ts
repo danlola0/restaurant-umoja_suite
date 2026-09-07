@@ -767,7 +767,7 @@ export const initialExpenses: Expense[] = [
     category: 'Boissons & Brasserie',
     description: 'Réapprovisionnement casiers Primus, Skol, Vitalo et Swissta',
     amount: 180000,
-    paymentMethod: 'M_PESA',
+    paymentMethod: 'WECHAT',
     supplier: 'Dépôt Bralima Kin-Est',
     reference: 'MP-984210',
     recordedBy: 'Sandrine Kalonji (Caissière)',
@@ -839,7 +839,7 @@ export const initialInvoices: Invoice[] = [
     createdAt: new Date(Date.now() - 3 * 3600000).toISOString(),
     paidAt: new Date(Date.now() - 2.8 * 3600000).toISOString(),
     cashierName: 'Sandrine Kalonji',
-    paymentMethod: 'M_PESA',
+    paymentMethod: 'WECHAT',
     paymentReference: 'MP-8729112'
   },
   {
@@ -893,7 +893,7 @@ export const initialAuditLogs: AuditLog[] = [
     time: '11:15:22',
     targetEntity: 'Invoice',
     targetId: 'inv-2026-001',
-    newValue: '71 000 FC via M-Pesa (MP-8729112)',
+    newValue: '71 000 CNY via WeChat',
     details: 'Facture Table 01 soldée et table libérée.'
   },
   {

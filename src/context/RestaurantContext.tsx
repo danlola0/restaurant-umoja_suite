@@ -533,7 +533,7 @@ export const RestaurantProvider: React.FC<{ children: React.ReactNode }> = ({ ch
       const session = sessionsResult.data?.[0];
       if (session) {
         const cashSales = salesFor(['ESPECES']);
-        setCashRegister({ id: session.id, date: session.opened_at.slice(0, 10), openedAt: session.opened_at, openingBalance: Number(session.opening_balance), openedBy: session.opened_by || 'Caissier', status: session.status, closedAt: session.closed_at || undefined, closedBy: session.closed_by || undefined, totalSalesCash: cashSales, totalSalesMobile: salesFor(['M_PESA', 'AIRTEL_MONEY', 'ORANGE_MONEY', 'QR_CODE']), totalSalesCard: salesFor(['CARTE']), totalSalesBank: salesFor(['BANQUE']), totalExpenses: expensesToday, theoreticalBalance: Number(session.opening_balance) + cashSales - expensesToday, realBalance: session.real_balance === null ? undefined : Number(session.real_balance), variance: session.variance === null ? undefined : Number(session.variance), varianceReason: session.variance_reason || undefined, notes: session.notes || undefined });
+        setCashRegister({ id: session.id, date: session.opened_at.slice(0, 10), openedAt: session.opened_at, openingBalance: Number(session.opening_balance), openedBy: session.opened_by || 'Caissier', status: session.status, closedAt: session.closed_at || undefined, closedBy: session.closed_by || undefined, totalSalesCash: cashSales, totalSalesMobile: salesFor(['WECHAT', 'ALIPAY', 'QR_CODE']), totalSalesCard: salesFor(['CARTE']), totalSalesBank: salesFor(['BANQUE']), totalExpenses: expensesToday, theoreticalBalance: Number(session.opening_balance) + cashSales - expensesToday, realBalance: session.real_balance === null ? undefined : Number(session.real_balance), variance: session.variance === null ? undefined : Number(session.variance), varianceReason: session.variance_reason || undefined, notes: session.notes || undefined });
       } else {
         setCashRegister({
           id: 'cash-register-not-opened',
@@ -1378,7 +1378,7 @@ export const RestaurantProvider: React.FC<{ children: React.ReactNode }> = ({ ch
     // Update Cash Register totals
     setCashRegister(prev => {
       const isCash = method === 'ESPECES';
-      const isMobile = ['M_PESA', 'AIRTEL_MONEY', 'ORANGE_MONEY'].includes(method);
+      const isMobile = ['WECHAT', 'ALIPAY', 'QR_CODE'].includes(method);
       const isCard = method === 'CARTE';
       const isBank = method === 'BANQUE';
 

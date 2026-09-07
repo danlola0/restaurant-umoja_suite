@@ -37,16 +37,13 @@ export const InvoiceModal: React.FC<InvoiceModalProps> = ({
       return;
     }
 
-    const styles = Array.from(document.querySelectorAll('style, link[rel="stylesheet"]'))
-      .map(node => node.outerHTML)
-      .join('');
     frameDocument.open();
-    frameDocument.write(`<!DOCTYPE html><html><head><meta charset="utf-8"/>${styles}<style>
-      @page { size: 80mm auto; margin: 6mm; }
-      html, body { margin: 0; background: #fff; }
-      body { color: #000; }
-      .kin-marche-receipt { box-shadow: none !important; margin: 0 auto !important; }
-      img { max-width: 100%; height: auto; }
+    frameDocument.write(`<!DOCTYPE html><html><head><meta charset="utf-8"/><title>${invoice.invoiceNumber}</title><style>
+      @page { size: 80mm auto; margin: 0; }
+      html, body { margin: 0; padding: 0; background: #fff; color: #000; }
+      body { width: 80mm; }
+      #umoja-print-receipt { width: 72mm !important; max-width: 72mm !important; margin: 4mm auto !important; }
+      img { max-width: 100%; height: auto; image-rendering: pixelated; }
     </style></head><body>${source.outerHTML}</body></html>`);
     frameDocument.close();
 

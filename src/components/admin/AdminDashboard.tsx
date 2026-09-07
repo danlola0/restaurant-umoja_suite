@@ -11,7 +11,6 @@ import {
   Calendar, 
   Clock, 
   AlertTriangle,
-  ArrowUpRight,
   Sparkles,
   Layers
 } from 'lucide-react';
@@ -44,10 +43,11 @@ export const AdminDashboard: React.FC = () => {
   } = useRestaurant();
 
   // Financial KPIs
-  const totalSalesAll = invoices.filter(i => i.status === 'PAYEE').reduce((sum, i) => sum + i.paidAmount, 0);
-  const totalExpenses = expenses.reduce((sum, e) => sum + e.amount, 0);
+  const paidInvoices = invoices.filter(i => i.status === 'PAYEE');
+  const totalSalesAll = paidInvoices.reduce((sum, i) => sum + Number(i.paidAmount || 0), 0);
+  const totalExpenses = expenses.reduce((sum, e) => sum + Number(e.amount || 0), 0);
   const netOperatingProfit = totalSalesAll - totalExpenses;
-  const averageTicket = invoices.length > 0 ? Math.round(totalSalesAll / invoices.length) : 0;
+  const averageTicket = paidInvoices.length > 0 ? Math.round(totalSalesAll / paidInvoices.length) : 0;
 
   // Hourly sales chart data (Simulation based on actual orders)
   const hourlyData = [
@@ -63,11 +63,9 @@ export const AdminDashboard: React.FC = () => {
 
   // Payment Breakdown
   const paymentBreakdownData = [
-    { name: 'Espèces', value: cashRegister.totalSalesCash || 180000, color: '#10b981' },
-    { name: 'M-Pesa', value: cashRegister.totalSalesMobile || 120000, color: '#f43f5e' },
-    { name: 'Airtel / Orange', value: 45000, color: '#f97316' },
-    { name: 'Carte / TPE', value: cashRegister.totalSalesCard || 60000, color: '#38bdf8' },
-    { name: 'Banque', value: cashRegister.totalSalesBank || 0, color: '#818cf8' },
+    { name: 'Cash', value: cashRegister.totalSalesCash || 0, color: '#10b981' },
+    { name: 'WeChat / Alipay', value: cashRegister.totalSalesMobile || 0, color: '#07c160' },
+    { name: 'UnionPay / Card', value: cashRegister.totalSalesCard || 0, color: '#38bdf8' },
   ].filter(d => d.value > 0);
 
   // Top Selling Dishes Breakdown
@@ -113,11 +111,8 @@ export const AdminDashboard: React.FC = () => {
           <div className="text-2xl font-black font-mono text-emerald-400 mt-2">
             {formatFC(totalSalesAll)}
           </div>
-          <div className="text-[11px] text-stone-400 mt-1 flex items-center gap-1">
-            <span className="text-emerald-400 font-bold flex items-center">
-              <ArrowUpRight className="w-3 h-3" /> +14%
-            </span>
-            <span>vs semaine précédente</span>
+          <div className="text-[11px] text-stone-400 mt-1">
+            Factures payées uniquement
           </div>
         </div>
 
@@ -143,11 +138,11 @@ export const AdminDashboard: React.FC = () => {
               <Sparkles className="w-4 h-4" />
             </div>
           </div>
-          <div className="text-2xl font-black font-mono text-amber-400 mt-2">
+          <div className={`text-2xl font-black font-mono mt-2 ${netOperatingProfit < 0 ? 'text-rose-400' : 'text-emerald-400'}`}>
             {formatFC(netOperatingProfit)}
           </div>
           <div className="text-[11px] text-stone-400 mt-1">
-            Marge brute : {totalSalesAll > 0 ? Math.round((netOperatingProfit / totalSalesAll) * 100) : 0}%
+            {netOperatingProfit < 0 ? 'Perte' : netOperatingProfit === 0 ? 'Équilibre (0)' : 'Bénéfice'} : ventes payées − achats
           </div>
         </div>
 
