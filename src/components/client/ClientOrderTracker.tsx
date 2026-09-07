@@ -21,10 +21,10 @@ export const ClientOrderTracker: React.FC = () => {
   const currentTable = tables.find(t => t.id === selectedTableId) || tables[0];
   if (!currentTable) {
     return (
-      <div className="bg-stone-900/60 border border-stone-800 rounded-2xl p-6 text-center text-stone-400">
-        <UtensilsCrossed className="w-10 h-10 mx-auto text-stone-600 mb-2" />
-        <h4 className="text-sm font-bold text-stone-300">Table indisponible</h4>
-        <p className="text-xs text-stone-500 mt-1">La sélection de votre table sera disponible dès son chargement.</p>
+      <div className="bg-stone-900/60 border border-stone-800 rounded-3xl p-7 text-center text-stone-400">
+        <UtensilsCrossed className="w-11 h-11 mx-auto text-stone-600 mb-3" />
+        <h4 className="text-sm font-semibold text-stone-200">Votre table arrive</h4>
+        <p className="text-xs text-stone-500 mt-1.5 leading-relaxed">La sélection de table s’affichera dès que la salle est prête.</p>
       </div>
     );
   }
@@ -72,33 +72,33 @@ export const ClientOrderTracker: React.FC = () => {
 
   if (sessionOrders.length === 0) {
     return (
-      <div className="bg-stone-900/60 border border-stone-800 rounded-2xl p-6 text-center text-stone-400">
-        <UtensilsCrossed className="w-10 h-10 mx-auto text-stone-600 mb-2" />
-        <h4 className="text-sm font-bold text-stone-300">Aucune commande en cours pour {currentTable.code}</h4>
-        <p className="text-xs text-stone-500 mt-1">
-          Parcourez le menu ci-dessous et composez votre commande pour lancer la préparation.
+      <div className="bg-stone-900/60 border border-stone-800 rounded-3xl p-7 text-center text-stone-400">
+        <UtensilsCrossed className="w-11 h-11 mx-auto text-stone-600 mb-3" />
+        <h4 className="text-sm font-semibold text-stone-200">Encore rien en cuisine pour {currentTable.code}</h4>
+        <p className="text-xs text-stone-500 mt-1.5 leading-relaxed">
+          Feuilletez la carte ci-dessous : dès que vous envoyez, le suivi s’allume ici.
         </p>
       </div>
     );
   }
 
   return (
-    <div className="bg-stone-900 border border-stone-800 rounded-2xl p-4 sm:p-5 shadow-xl text-stone-100 space-y-4">
+    <div className="bg-stone-900 border border-stone-800 rounded-3xl p-5 sm:p-6 shadow-xl text-stone-100 space-y-5">
       {/* Tracker Header */}
-      <div className="flex flex-wrap items-center justify-between gap-3 border-b border-stone-800 pb-3">
-        <div className="flex items-center gap-2.5">
-          <div className="w-9 h-9 rounded-xl bg-amber-500/20 text-amber-400 flex items-center justify-center font-bold text-sm">
+      <div className="flex flex-wrap items-center justify-between gap-3 border-b border-stone-800 pb-4">
+        <div className="flex items-center gap-3">
+          <div className="w-10 h-10 rounded-xl bg-amber-500/20 text-amber-400 flex items-center justify-center font-bold text-sm">
             {currentTable.code.replace('Table ', 'T')}
           </div>
           <div>
             <div className="flex items-center gap-2">
-              <h3 className="text-sm font-bold text-stone-100">Suivi en direct de votre table</h3>
-              <span className="px-2 py-0.5 rounded-full text-[10px] font-bold bg-amber-500/20 text-amber-300 border border-amber-500/40">
+              <h3 className="text-sm font-semibold text-stone-100">Votre commande, en direct</h3>
+              <span className="px-2.5 py-0.5 rounded-full text-[10px] font-bold bg-amber-500/20 text-amber-300 border border-amber-500/40">
                 {currentTable.code}
               </span>
             </div>
-            <p className="text-[11px] text-stone-400">
-              {sessionOrders.length} commande{sessionOrders.length > 1 ? 's' : ''} associée{sessionOrders.length > 1 ? 's' : ''} à votre session
+            <p className="text-[11px] text-stone-400 mt-0.5">
+              {sessionOrders.length} passage{sessionOrders.length > 1 ? 's' : ''} vers les fourneaux
             </p>
           </div>
         </div>
@@ -107,17 +107,17 @@ export const ClientOrderTracker: React.FC = () => {
         <div className="flex items-center gap-2">
           <button
             onClick={handleCallWaiter}
-            className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-stone-800 hover:bg-stone-700 text-stone-300 text-xs font-semibold border border-stone-700 transition"
+            className="flex items-center gap-1.5 min-h-10 px-3.5 py-2 rounded-xl bg-stone-800 hover:bg-stone-700 text-stone-300 text-xs font-semibold border border-stone-700 transition"
           >
             <BellRing className="w-3.5 h-3.5 text-amber-400" />
-            <span>Appeler serveur</span>
+            <span>Appeler le service</span>
           </button>
           <button
             onClick={handleRequestBill}
-            className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-amber-600/20 hover:bg-amber-600/30 text-amber-300 text-xs font-semibold border border-amber-600/40 transition"
+            className="flex items-center gap-1.5 min-h-10 px-3.5 py-2 rounded-xl bg-amber-600/20 hover:bg-amber-600/30 text-amber-300 text-xs font-semibold border border-amber-600/40 transition"
           >
             <Receipt className="w-3.5 h-3.5 text-amber-400" />
-            <span>Demander l'addition</span>
+            <span>L’addition, s’il vous plaît</span>
           </button>
         </div>
       </div>

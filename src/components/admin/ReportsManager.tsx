@@ -53,7 +53,15 @@ export const ReportsManager: React.FC = () => {
   const exportToExcel = (dataType: string) => {
     const { headers, rows } = buildReportData(dataType);
     const tableRows = rows.map(row => `<tr>${row.map(cell => `<td>${String(cell)}</td>`).join('')}</tr>`).join('');
-    const totalRow = dataType !== 'attendance' ? `<tr><td colspan="${headers.length - 1}" style="font-weight:bold">TOTAL</td><td style="font-weight:bold">${rows.reduce((sum, row) => sum + (Number(String(row[4]).replace(/[^0-9.-]/g, '')) || 0), 0)}</td></tr>` : '';
+    const amountIndex = headers.findIndex(header => /montant|total/i.test(header));
+    const totalValue = amountIndex >= 0
+      ? rows.reduce((sum, row) => sum + (Number(String(row[amountIndex]).replace(/[^0-9.-]/g, '')) || 0), 0)
+      : 0;
+    const totalRow = dataType !== 'attendance' && amountIndex >= 0
+      ? `<tr>${headers.map((_, index) => index === amountIndex
+        ? `<td style="font-weight:bold">${totalValue}</td>`
+        : `<td style="font-weight:bold">${index === 0 ? 'TOTAL' : ''}</td>`).join('')}</tr>`
+      : '';
     const html = `<html xmlns:x="urn:schemas-microsoft-com:office:excel"><head><meta charset="utf-8"/><style>table{border-collapse:collapse}th,td{border:1px solid #999;padding:4px;font-size:11px}</style></head><body><h2>Rapport Umoja - ${dataType}</h2><p>Généré le ${new Date().toLocaleString('fr-FR')}</p><table><thead><tr>${headers.map(h => `<th>${h}</th>`).join('')}</tr></thead><tbody>${tableRows}${totalRow}</tbody></table></body></html>`;
     const blob = new Blob([html], { type: 'application/vnd.ms-excel' });
     const link = document.createElement('a');

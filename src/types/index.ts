@@ -133,7 +133,7 @@ export interface OrderItem {
   subtotal: number;
 }
 
-export type OrderStatus = 'NOUVELLE' | 'ACCEPTEE' | 'EN_PREPARATION' | 'PRETE' | 'SERVIE' | 'ANNULEE';
+export type OrderStatus = 'NOUVELLE' | 'ACCEPTEE' | 'EN_PREPARATION' | 'PRETE' | 'SERVIE' | 'PAYEE' | 'ANNULEE';
 
 export interface Order {
   id: string;

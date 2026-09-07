@@ -261,7 +261,7 @@ export const CashierPosView: React.FC = () => {
                     </span>
                     {t.status !== 'LIBRE' && (
                       <span className="font-mono font-bold text-amber-300">
-                        {t.status === 'A_PAYER' ? 'À Régler' : 'Active'}
+                        {hasOrders ? 'Commandes' : t.status === 'A_PAYER' ? 'À Régler' : 'Active'}
                       </span>
                     )}
                   </div>
@@ -337,8 +337,15 @@ export const CashierPosView: React.FC = () => {
                         <span className="text-[10px] text-stone-400">{formatTimeOnly(ord.createdAt)}</span>
                         <span className="font-mono font-bold text-stone-200">{formatFC(ord.totalAmount)}</span>
                       </div>
-                      <div className="text-[11px] text-stone-400">
-                        {ord.items.map(i => `${i.quantity}x ${i.productName}`).join(', ')}
+                      <div className="text-[11px] text-stone-400 space-y-0.5">
+                        {ord.items.length === 0
+                          ? 'Détail des plats indisponible'
+                          : ord.items.map(i => (
+                            <div key={i.id} className="flex justify-between gap-2">
+                              <span>{i.quantity}× {i.productName}</span>
+                              <span className="font-mono">{formatFC(i.subtotal)}</span>
+                            </div>
+                          ))}
                       </div>
                     </div>
                   ))}

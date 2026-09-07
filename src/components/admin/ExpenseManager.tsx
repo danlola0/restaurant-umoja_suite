@@ -108,9 +108,11 @@ export const ExpenseManager: React.FC = () => {
     };
 
     if (editingExpense) {
-      updateExpense(editingExpense.id, expenseData);
-      window.alert('Dépense modifiée avec succès.');
-      setIsModalOpen(false);
+      const updated = await updateExpense(editingExpense.id, expenseData);
+      if (updated) {
+        window.alert('Dépense modifiée avec succès.');
+        setIsModalOpen(false);
+      }
       return;
     }
 

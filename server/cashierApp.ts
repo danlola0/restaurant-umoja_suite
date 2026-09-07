@@ -155,9 +155,49 @@ export function createCashierApp(config: CashierAppConfig) {
     }
 
     const order = mapOrder(row);
+    if (order.status === 'ANNULEE') {
+      res.status(409).json({ error: 'Cette commande est annulée et ne peut pas être encaissée.' });
+      return;
+    }
+
+    const { data: alreadyPaidInvoices } = await client
+      .from('invoices')
+      .select('id')
+      .eq('status', 'PAYEE')
+      .contains('order_ids', [order.id])
+      .limit(1);
+
+    if (order.status === 'PAYEE' || (alreadyPaidInvoices && alreadyPaidInvoices.length > 0)) {
+      if (order.status !== 'PAYEE') {
+        await client.from('orders').update({ status: 'PAYEE', served_at: order.servedAt || new Date().toISOString() }).eq('id', order.id);
+      }
+      res.status(409).json({ error: 'Cette commande est déjà payée.' });
+      return;
+    }
+
     const now = new Date().toISOString();
     const invoiceId = `inv-${Date.now()}`;
+    const paymentId = `tx-${Date.now()}`;
     const invoiceNumber = `FACT-${now.slice(0, 10).replaceAll('-', '')}-${String(Date.now()).slice(-4)}`;
+
+    const revertOrder = async () => {
+      await client.from('orders').update({
+        status: order.status,
+        served_at: order.servedAt || null,
+      }).eq('id', order.id);
+    };
+
+    const { data: claimed, error: claimError } = await client
+      .from('orders')
+      .update({ status: 'PAYEE', served_at: order.servedAt || now })
+      .eq('id', order.id)
+      .in('status', PENDING_STATUSES)
+      .select('id')
+      .maybeSingle();
+    if (claimError || !claimed) {
+      res.status(409).json({ error: claimError?.message || 'Cette commande est déjà payée ou n’est plus encaissable.' });
+      return;
+    }
 
     const { error: invoiceError } = await client.from('invoices').insert({
       id: invoiceId,
@@ -171,19 +211,19 @@ export function createCashierApp(config: CashierAppConfig) {
       discount_amount: 0,
       tax_amount: 0,
       total_amount: order.totalAmount,
-      paid_amount: order.totalAmount,
-      status: 'PAYEE',
+      paid_amount: 0,
+      status: 'EN_ATTENTE',
       created_at: now,
-      paid_at: now,
       payment_method: paymentMethod,
     });
     if (invoiceError) {
+      await revertOrder();
       res.status(400).json({ error: `Facture non enregistrée : ${invoiceError.message}` });
       return;
     }
 
     const { error: paymentError } = await client.from('payments').insert({
-      id: `tx-${Date.now()}`,
+      id: paymentId,
       invoice_id: invoiceId,
       amount: order.totalAmount,
       payment_method: paymentMethod,
@@ -191,28 +231,65 @@ export function createCashierApp(config: CashierAppConfig) {
       created_at: now,
     });
     if (paymentError) {
+      await client.from('invoices').delete().eq('id', invoiceId);
+      await revertOrder();
       res.status(400).json({ error: `Paiement non enregistré : ${paymentError.message}` });
       return;
     }
 
-    const { error: statusError } = await client
-      .from('orders')
-      .update({ status: 'PAYEE', served_at: order.servedAt || now })
-      .eq('id', order.id);
-    if (statusError) {
-      res.status(400).json({ error: `Statut commande non mis à jour : ${statusError.message}` });
+    const { error: invoicePaidError } = await client.from('invoices').update({
+      paid_amount: order.totalAmount,
+      status: 'PAYEE',
+      paid_at: now,
+      payment_method: paymentMethod,
+    }).eq('id', invoiceId);
+    if (invoicePaidError) {
+      await client.from('payments').delete().eq('id', paymentId);
+      await client.from('invoices').delete().eq('id', invoiceId);
+      await revertOrder();
+      res.status(400).json({ error: `Facture non soldée : ${invoicePaidError.message}` });
       return;
     }
 
-    if (order.tableId) {
-      await client.from('restaurant_tables').update({ status: 'LIBRE' }).eq('id', order.tableId);
+    const remainingFilter = order.sessionId
+      ? { column: 'table_session_id' as const, value: order.sessionId }
+      : order.tableId
+        ? { column: 'table_id' as const, value: order.tableId }
+        : null;
+
+    let remainingUnpaid = 0;
+    if (remainingFilter) {
+      const { data: siblingOrders } = await client
+        .from('orders')
+        .select('id, status')
+        .eq(remainingFilter.column, remainingFilter.value)
+        .neq('id', order.id)
+        .not('status', 'in', '(PAYEE,ANNULEE)');
+      remainingUnpaid = (siblingOrders || []).length;
     }
+
     if (order.sessionId) {
-      await client.from('table_sessions').update({
-        status: 'CLOSED',
-        closed_at: now,
-        paid_amount: order.totalAmount,
-      }).eq('id', order.sessionId);
+      const { data: sessionRow } = await client
+        .from('table_sessions')
+        .select('paid_amount')
+        .eq('id', order.sessionId)
+        .maybeSingle();
+      const nextPaidAmount = Number(sessionRow?.paid_amount || 0) + order.totalAmount;
+      if (remainingUnpaid === 0) {
+        await client.from('table_sessions').update({
+          status: 'CLOSED',
+          closed_at: now,
+          paid_amount: nextPaidAmount,
+        }).eq('id', order.sessionId);
+      } else {
+        await client.from('table_sessions').update({
+          paid_amount: nextPaidAmount,
+        }).eq('id', order.sessionId);
+      }
+    }
+
+    if (order.tableId && remainingUnpaid === 0) {
+      await client.from('restaurant_tables').update({ status: 'LIBRE' }).eq('id', order.tableId);
     }
 
     res.json({

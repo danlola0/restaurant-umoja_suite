@@ -441,6 +441,7 @@ drop policy if exists attendance_self_read on public.attendance_records;
 drop policy if exists attendance_self_insert on public.attendance_records;
 drop policy if exists attendance_manager_update on public.attendance_records;
 drop policy if exists work_rules_admin_all on public.work_rules;
+drop policy if exists work_rules_staff_read on public.work_rules;
 drop policy if exists expenses_manager_read on public.expenses;
 drop policy if exists expenses_manager_write on public.expenses;
 drop policy if exists expenses_service_read on public.expenses;
@@ -486,6 +487,8 @@ create policy order_items_public_insert on public.order_items for insert with ch
   exists (select 1 from public.orders where orders.id = order_id and orders.created_by is null)
 );
 create policy orders_staff_update on public.orders for update using (public.has_role(array['ADMINISTRATEUR', 'RESPONSABLE', 'CUISINE', 'SERVEUR'])) with check (public.has_role(array['ADMINISTRATEUR', 'RESPONSABLE', 'CUISINE', 'SERVEUR']));
+drop policy if exists orders_cashier_update on public.orders;
+create policy orders_cashier_update on public.orders for update using (public.has_role(array['CAISSIER'])) with check (public.has_role(array['CAISSIER']));
 create policy order_items_visible_with_order on public.order_items for select using (exists (select 1 from public.orders where orders.id = order_id and (orders.created_by = auth.uid() or public.has_role(array['ADMINISTRATEUR', 'RESPONSABLE', 'CAISSIER', 'SERVEUR', 'CUISINE']))));
 create policy order_items_public_read on public.order_items for select using (exists (select 1 from public.orders where orders.id = order_id and orders.created_by is null));
 create policy order_items_staff_write on public.order_items for all using (public.has_role(array['ADMINISTRATEUR', 'RESPONSABLE', 'CUISINE', 'SERVEUR'])) with check (public.has_role(array['ADMINISTRATEUR', 'RESPONSABLE', 'CUISINE', 'SERVEUR']));
@@ -498,6 +501,7 @@ create policy payments_cashier_write on public.payments for all using (public.ha
 create policy attendance_self_read on public.attendance_records for select using (exists (select 1 from public.employees where employees.id = employee_id and employees.auth_user_id = auth.uid()) or public.has_role(array['ADMINISTRATEUR', 'RESPONSABLE']));
 create policy attendance_self_insert on public.attendance_records for insert with check (exists (select 1 from public.employees where employees.id = employee_id and employees.auth_user_id = auth.uid()) or public.has_role(array['ADMINISTRATEUR', 'RESPONSABLE']));
 create policy attendance_manager_update on public.attendance_records for update using (public.has_role(array['ADMINISTRATEUR', 'RESPONSABLE'])) with check (public.has_role(array['ADMINISTRATEUR', 'RESPONSABLE']));
+create policy work_rules_staff_read on public.work_rules for select using (auth.role() = 'authenticated');
 create policy work_rules_admin_all on public.work_rules for all using (public.has_role(array['ADMINISTRATEUR', 'RESPONSABLE'])) with check (public.has_role(array['ADMINISTRATEUR', 'RESPONSABLE']));
 
 create policy expenses_service_read on public.expenses for select using (
@@ -547,7 +551,7 @@ do $$
 declare
   table_name text;
 begin
-  foreach table_name in array array['restaurant_tables', 'table_sessions', 'orders', 'order_items', 'payments'] loop
+  foreach table_name in array array['restaurant_tables', 'table_sessions', 'orders', 'order_items', 'payments', 'invoices'] loop
     begin
       execute format('alter publication supabase_realtime add table public.%I', table_name);
     exception when duplicate_object then null;

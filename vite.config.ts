@@ -1,11 +1,32 @@
 import tailwindcss from '@tailwindcss/vite';
 import react from '@vitejs/plugin-react';
 import path from 'path';
-import {defineConfig} from 'vite';
+import {defineConfig, loadEnv, type Plugin} from 'vite';
+import {createCashierApp} from './server/cashierApp';
 
-export default defineConfig(() => {
+function cashierApiPlugin(env: Record<string, string>): Plugin {
+  const app = createCashierApp({
+    supabaseUrl: env.SUPABASE_URL || env.VITE_SUPABASE_URL || '',
+    supabaseAnonKey: env.SUPABASE_ANON_KEY || env.VITE_SUPABASE_ANON_KEY || '',
+  });
   return {
-    plugins: [react(), tailwindcss()],
+    name: 'cashier-api',
+    configureServer(server) {
+      server.middlewares.use((req, res, next) => {
+        if (req.url?.startsWith('/api/')) {
+          app(req as any, res as any, next);
+          return;
+        }
+        next();
+      });
+    },
+  };
+}
+
+export default defineConfig(({mode}) => {
+  const env = loadEnv(mode, process.cwd(), '');
+  return {
+    plugins: [react(), tailwindcss(), cashierApiPlugin(env)],
     resolve: {
       alias: {
         '@': path.resolve(__dirname, '.'),

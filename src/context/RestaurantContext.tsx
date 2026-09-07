@@ -101,6 +101,7 @@ interface RestaurantContextType {
 
   // Invoices & Payments (Cashier)
   generateInvoiceForTable: (tableId: string, cashierName: string, discountAmount?: number) => Invoice | null;
+  generateInvoiceForOrders: (orderIds: string[], cashierName: string, discountAmount?: number) => Invoice | null;
   recordPayment: (
     invoiceId: string, 
     amountPaid: number, 
@@ -134,7 +135,7 @@ interface RestaurantContextType {
 
   // Expenses
   recordExpense: (data: Omit<Expense, 'id' | 'createdAt'>) => Promise<boolean>;
-  updateExpense: (id: string, updates: Partial<Expense>) => void;
+  updateExpense: (id: string, updates: Partial<Expense>) => Promise<boolean>;
   deleteExpense: (id: string) => void;
   addExpenseCategory: (name: string, iconName?: string) => void;
 
@@ -254,6 +255,48 @@ const tableFromSupabase = (row: any): RestaurantTable => ({
   status: row.status,
   waiterName: row.waiter_name || undefined,
 });
+
+const CASHIER_ORDERS_SELECT = '*, order_items(*, products(id, name, price)), restaurant_tables(code, name, zone)';
+
+const mapOrderFromSupabase = (row: any, tableCodeById: Map<string, string>): Order => {
+  const nestedItems = Array.isArray(row.order_items) ? row.order_items : [];
+  const embeddedTable = Array.isArray(row.restaurant_tables) ? row.restaurant_tables[0] : row.restaurant_tables;
+  return {
+    id: row.id,
+    orderNumber: row.order_number,
+    restaurantId: 'resto-umoja',
+    tableId: row.table_id || '',
+    tableCode: embeddedTable?.code || tableCodeById.get(row.table_id) || '',
+    sessionId: row.table_session_id || '',
+    items: nestedItems.map((item: any) => ({
+      id: item.id,
+      productId: item.product_id || item.products?.id || '',
+      productName: item.product_name || item.products?.name || 'Article',
+      unitPrice: Number(item.unit_price ?? item.products?.price ?? 0),
+      quantity: item.quantity,
+      notes: item.notes || undefined,
+      subtotal: Number(item.subtotal ?? item.quantity * Number(item.unit_price || 0)),
+    })),
+    totalAmount: Number(row.total_amount),
+    status: row.status,
+    createdAt: row.created_at,
+    preparedAt: row.prepared_at || undefined,
+    servedAt: row.served_at || undefined,
+    specialInstructions: row.special_instructions || undefined,
+    clientName: row.client_name || undefined,
+    orderType: row.order_type,
+  };
+};
+
+const attachOrderItems = (ordersRows: any[], itemRows: any[]) => {
+  const itemsByOrder = new Map<string, any[]>();
+  itemRows.forEach(item => {
+    const items = itemsByOrder.get(item.order_id) || [];
+    items.push(item);
+    itemsByOrder.set(item.order_id, items);
+  });
+  return ordersRows.map(row => ({ ...row, order_items: row.order_items?.length ? row.order_items : (itemsByOrder.get(row.id) || []) }));
+};
 
 function loadFromStorage<T>(key: string, fallback: T): T {
   try {
@@ -660,52 +703,51 @@ export const RestaurantProvider: React.FC<{ children: React.ReactNode }> = ({ ch
     let mounted = true;
 
     const refreshOperationalData = async () => {
-      const [tablesResult, sessionsResult, ordersResult, itemsResult] = await Promise.all([
+      const [tablesResult, sessionsResult, joinedOrdersResult] = await Promise.all([
         supabase.from('restaurant_tables').select('*').order('code'),
-        supabase.from('table_sessions').select('*').eq('status', 'ACTIVE').order('opened_at', { ascending: false }),
-        supabase.from('orders').select('*').order('created_at', { ascending: false }),
-        supabase.from('order_items').select('*'),
+        supabase.from('table_sessions').select('*').order('opened_at', { ascending: false }).limit(300),
+        supabase.from('orders').select(CASHIER_ORDERS_SELECT).order('created_at', { ascending: false }),
       ]);
-      if (!mounted || tablesResult.error || sessionsResult.error || ordersResult.error || itemsResult.error) return;
+      if (!mounted) return;
+
+      if (tablesResult.error) console.error('Tables non chargées :', tablesResult.error.message);
+      if (sessionsResult.error) console.error('Sessions non chargées :', sessionsResult.error.message);
+      if (joinedOrdersResult.error) console.error('Commandes (jointure) :', joinedOrdersResult.error.message);
+
+      let orderRows = joinedOrdersResult.data || [];
+      if (joinedOrdersResult.error || orderRows.some(row => !Array.isArray(row.order_items))) {
+        const [plainOrders, itemsResult] = await Promise.all([
+          supabase.from('orders').select('*').order('created_at', { ascending: false }),
+          supabase.from('order_items').select('*'),
+        ]);
+        if (plainOrders.error) {
+          console.error('Commandes non chargées :', plainOrders.error.message);
+        } else {
+          orderRows = attachOrderItems(plainOrders.data || [], itemsResult.data || []);
+        }
+      }
 
       const persistedTables = tablesResult.data || [];
-      const itemsByOrder = new Map<string, any[]>();
-      (itemsResult.data || []).forEach((item: any) => {
-        const items = itemsByOrder.get(item.order_id) || [];
-        items.push(item);
-        itemsByOrder.set(item.order_id, items);
-      });
-      const persistedOrders = ordersResult.data || [];
-      setTables(persistedTables.map(tableFromSupabase));
-      setTableSessions((sessionsResult.data || []).map((row: any) => ({
-        id: row.id,
-        tableId: row.table_id,
-        tableCode: persistedTables.find((table: any) => table.id === row.table_id)?.code || row.table_id,
-        openedAt: row.opened_at,
-        closedAt: row.closed_at || undefined,
-        status: row.status,
-        orderIds: persistedOrders.filter((order: any) => order.table_session_id === row.id).map((order: any) => order.id),
-        totalAmount: Number(row.total_amount),
-        paidAmount: Number(row.paid_amount),
-        customerCount: row.customer_count,
-      })));
-      setOrders(persistedOrders.map((row: any) => ({
-        id: row.id,
-        orderNumber: row.order_number,
-        restaurantId: 'resto-umoja',
-        tableId: row.table_id,
-        tableCode: persistedTables.find((table: any) => table.id === row.table_id)?.code || '',
-        sessionId: row.table_session_id || '',
-        items: (itemsByOrder.get(row.id) || []).map(item => ({ id: item.id, productId: item.product_id || '', productName: item.product_name, unitPrice: Number(item.unit_price), quantity: item.quantity, notes: item.notes || undefined, subtotal: Number(item.subtotal) })),
-        totalAmount: Number(row.total_amount),
-        status: row.status,
-        createdAt: row.created_at,
-        preparedAt: row.prepared_at || undefined,
-        servedAt: row.served_at || undefined,
-        specialInstructions: row.special_instructions || undefined,
-        clientName: row.client_name || undefined,
-        orderType: row.order_type,
-      })));
+      const tableCodeById = new Map(persistedTables.map((table: any) => [table.id, table.code]));
+      const mappedOrders = orderRows.map(row => mapOrderFromSupabase(row, tableCodeById));
+      if (tablesResult.data) setTables(persistedTables.map(tableFromSupabase));
+      if (sessionsResult.data) {
+        setTableSessions(sessionsResult.data.map((row: any) => ({
+          id: row.id,
+          tableId: row.table_id,
+          tableCode: tableCodeById.get(row.table_id) || row.table_id,
+          openedAt: row.opened_at,
+          closedAt: row.closed_at || undefined,
+          status: row.status,
+          orderIds: mappedOrders.filter(order => order.sessionId === row.id).map(order => order.id),
+          totalAmount: Number(row.total_amount),
+          paidAmount: Number(row.paid_amount),
+          customerCount: row.customer_count,
+        })));
+      }
+      if (mappedOrders.length || !joinedOrdersResult.error) {
+        setOrders(mappedOrders);
+      }
     };
 
     void refreshOperationalData();
@@ -714,6 +756,7 @@ export const RestaurantProvider: React.FC<{ children: React.ReactNode }> = ({ ch
       .on('postgres_changes', { event: '*', schema: 'public', table: 'table_sessions' }, refreshOperationalData)
       .on('postgres_changes', { event: '*', schema: 'public', table: 'orders' }, refreshOperationalData)
       .on('postgres_changes', { event: '*', schema: 'public', table: 'order_items' }, refreshOperationalData)
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'invoices' }, refreshOperationalData)
       .subscribe();
 
     return () => {
@@ -1013,6 +1056,7 @@ export const RestaurantProvider: React.FC<{ children: React.ReactNode }> = ({ ch
       }
       return t;
     }));
+    void supabase.from('restaurant_tables').update({ status: 'COMMANDE_EN_COURS' }).eq('id', table.id);
 
     logAudit('CREATION_COMMANDE', 'Order', newOrder.id, undefined, `${orderNumber} - ${totalAmount} CNY`, `Commande passée pour ${table.code}`);
     addNotification(`Nouvelle commande ${orderNumber} (${table.code}) envoyée en cuisine !`, 'success');
@@ -1027,7 +1071,7 @@ export const RestaurantProvider: React.FC<{ children: React.ReactNode }> = ({ ch
     void supabase.from('orders').update({
       status: newStatus,
       prepared_at: newStatus === 'PRETE' ? now : undefined,
-      served_at: newStatus === 'SERVIE' ? now : undefined,
+      served_at: newStatus === 'SERVIE' || newStatus === 'PAYEE' ? now : undefined,
     }).eq('id', orderId).then(({ error }) => {
       if (error) {
         addNotification(`Statut non synchronisé avec Supabase : ${error.message}`, 'error');
@@ -1036,7 +1080,7 @@ export const RestaurantProvider: React.FC<{ children: React.ReactNode }> = ({ ch
       setOrders(prev => prev.map(ord => {
         if (ord.id === orderId) {
           const oldStatus = ord.status;
-          const updated: Order = { ...ord, status: newStatus, preparedAt: newStatus === 'PRETE' ? now : ord.preparedAt, servedAt: newStatus === 'SERVIE' ? now : ord.servedAt };
+          const updated: Order = { ...ord, status: newStatus, preparedAt: newStatus === 'PRETE' ? now : ord.preparedAt, servedAt: newStatus === 'SERVIE' || newStatus === 'PAYEE' ? now : ord.servedAt };
           logAudit('STATUT_COMMANDE', 'Order', orderId, oldStatus, newStatus, `Mise à jour état ${ord.orderNumber} (${ord.tableCode})`);
           if (newStatus === 'PRETE') {
             addNotification(`La commande ${ord.orderNumber} (${ord.tableCode}) est PRÊTE à être servie !`, 'warning');
@@ -1132,23 +1176,36 @@ export const RestaurantProvider: React.FC<{ children: React.ReactNode }> = ({ ch
     });
   }, [logAudit, addNotification]);
 
-  // Generate Invoice For Table Session (Grouped Orders)
-  const generateInvoiceForTable = useCallback((tableId: string, cashierName: string, discountAmount = 0): Invoice | null => {
-    const session = tableSessions.find(s => s.tableId === tableId && s.status === 'ACTIVE');
-    if (!session) {
-      addNotification('Aucune session active trouvée pour cette table.', 'warning');
-      return null;
-    }
-
-    const sessionOrders = orders.filter(o => session.orderIds.includes(o.id) && o.status !== 'ANNULEE');
+  const generateInvoiceForOrders = useCallback((orderIds: string[], cashierName: string, discountAmount = 0): Invoice | null => {
+    const paidOrderIds = new Set(
+      invoices.filter(invoice => invoice.status === 'PAYEE').flatMap(invoice => invoice.orderIds)
+    );
+    const sessionOrders = orders.filter(order =>
+      orderIds.includes(order.id) && order.status !== 'ANNULEE' && order.status !== 'PAYEE' && !paidOrderIds.has(order.id)
+    );
     if (sessionOrders.length === 0) {
-      addNotification('Aucune commande enregistrée pour cette table.', 'warning');
+      addNotification('Aucune commande à facturer.', 'warning');
       return null;
     }
 
-    // Regroup items from all orders into consolidated invoice items
-    const itemMap = new Map<string, { productName: string; quantity: number; unitPrice: number; subtotal: number }>();
+    const firstOrder = sessionOrders[0];
+    const tableId = firstOrder.tableId;
+    const tableCode = firstOrder.tableCode || firstOrder.clientName || 'Comptoir';
+    const session = tableSessions.find(s => s.id === firstOrder.sessionId)
+      || tableSessions.find(s => s.tableId === tableId && s.status === 'ACTIVE')
+      || {
+        id: firstOrder.sessionId || '',
+        tableId,
+        tableCode,
+        openedAt: firstOrder.createdAt,
+        status: 'ACTIVE' as const,
+        orderIds: sessionOrders.map(order => order.id),
+        totalAmount: sessionOrders.reduce((sum, order) => sum + order.totalAmount, 0),
+        paidAmount: 0,
+        customerCount: 1,
+      };
 
+    const itemMap = new Map<string, { productName: string; quantity: number; unitPrice: number; subtotal: number }>();
     sessionOrders.forEach(order => {
       order.items.forEach(it => {
         const key = `${it.productName}_${it.unitPrice}`;
@@ -1168,9 +1225,8 @@ export const RestaurantProvider: React.FC<{ children: React.ReactNode }> = ({ ch
     });
 
     const consolidatedItems = Array.from(itemMap.values());
-    const subtotal = consolidatedItems.reduce((acc, i) => acc + i.subtotal, 0);
+    const subtotal = consolidatedItems.reduce((acc, i) => acc + i.subtotal, 0) || sessionOrders.reduce((sum, order) => sum + order.totalAmount, 0);
     const finalTotal = Math.max(0, subtotal - discountAmount);
-
     const invoiceNumber = `FACT-2026-${String(invoices.length + 1).padStart(4, '0')}`;
 
     const newInvoice: Invoice = {
@@ -1178,12 +1234,12 @@ export const RestaurantProvider: React.FC<{ children: React.ReactNode }> = ({ ch
       invoiceNumber,
       sessionId: session.id,
       tableId,
-      tableCode: session.tableCode,
-      orderIds: session.orderIds,
+      tableCode,
+      orderIds: sessionOrders.map(order => order.id),
       items: consolidatedItems,
       subtotal,
       discountAmount,
-      taxAmount: 0, // In RDC restaurant prices are standardly TTC
+      taxAmount: 0,
       totalAmount: finalTotal,
       paidAmount: 0,
       remainingAmount: finalTotal,
@@ -1196,8 +1252,8 @@ export const RestaurantProvider: React.FC<{ children: React.ReactNode }> = ({ ch
     void supabase.from('invoices').insert({
       id: newInvoice.id,
       invoice_number: newInvoice.invoiceNumber,
-      table_session_id: newInvoice.sessionId,
-      table_id: newInvoice.tableId,
+      table_session_id: newInvoice.sessionId || null,
+      table_id: newInvoice.tableId || null,
       table_code: newInvoice.tableCode,
       order_ids: newInvoice.orderIds,
       created_by: currentUser?.auth_user_id || null,
@@ -1213,15 +1269,32 @@ export const RestaurantProvider: React.FC<{ children: React.ReactNode }> = ({ ch
       if (error) addNotification(`Facture non enregistrée dans Supabase : ${error.message}`, 'error');
     });
 
-    // Mark table as A_PAYER
-    setTables(prev => prev.map(t => t.id === tableId ? { ...t, status: 'A_PAYER' } : t));
-    void supabase.from('restaurant_tables').update({ status: 'A_PAYER' }).eq('id', tableId);
+    if (tableId) {
+      setTables(prev => prev.map(t => t.id === tableId ? { ...t, status: 'A_PAYER' } : t));
+      void supabase.from('restaurant_tables').update({ status: 'A_PAYER' }).eq('id', tableId);
+    }
 
-    logAudit('GENERATION_FACTURE', 'Invoice', newInvoice.id, undefined, `${invoiceNumber} - Total: ${finalTotal} CNY`, `Facture générée pour ${session.tableCode}`);
-    addNotification(`Facture ${invoiceNumber} (${session.tableCode}) générée avec succès !`, 'success');
-
+    logAudit('GENERATION_FACTURE', 'Invoice', newInvoice.id, undefined, `${invoiceNumber} - Total: ${finalTotal} CNY`, `Facture générée pour ${tableCode}`);
+    addNotification(`Facture ${invoiceNumber} (${tableCode}) générée avec succès !`, 'success');
     return newInvoice;
-  }, [tableSessions, orders, invoices.length, currentUser, logAudit, addNotification]);
+  }, [tableSessions, orders, invoices, currentUser, logAudit, addNotification]);
+
+  const generateInvoiceForTable = useCallback((tableId: string, cashierName: string, discountAmount = 0): Invoice | null => {
+    const paidOrderIds = new Set(
+      invoices.filter(invoice => invoice.status === 'PAYEE').flatMap(invoice => invoice.orderIds)
+    );
+    const pendingOnTable = orders.filter(order =>
+      order.tableId === tableId
+      && order.status !== 'ANNULEE'
+      && order.status !== 'PAYEE'
+      && !paidOrderIds.has(order.id)
+    );
+    if (pendingOnTable.length === 0) {
+      addNotification('Aucune commande enregistrée pour cette table.', 'warning');
+      return null;
+    }
+    return generateInvoiceForOrders(pendingOnTable.map(order => order.id), cashierName, discountAmount);
+  }, [orders, invoices, generateInvoiceForOrders, addNotification]);
 
   // Record Payment
   const recordPayment = useCallback(async (
@@ -1349,6 +1422,17 @@ export const RestaurantProvider: React.FC<{ children: React.ReactNode }> = ({ ch
       }));
       void supabase.from('table_sessions').update({ status: 'CLOSED', closed_at: new Date().toISOString(), paid_amount: invoice.totalAmount }).eq('id', invoice.sessionId);
       void supabase.from('restaurant_tables').update({ status: 'LIBRE' }).eq('id', invoice.tableId);
+      const billedOrderIds = invoice.orderIds.filter(Boolean);
+      if (billedOrderIds.length > 0) {
+        const servedAt = new Date().toISOString();
+        void supabase.from('orders').update({ status: 'PAYEE', served_at: servedAt }).in('id', billedOrderIds).then(({ error }) => {
+          if (error) {
+            addNotification(`Commandes non marquées payées : ${error.message}`, 'warning');
+            return;
+          }
+          setOrders(prev => prev.map(order => billedOrderIds.includes(order.id) ? { ...order, status: 'PAYEE', servedAt } : order));
+        });
+      }
 
       logAudit('PAIEMENT_TOTAL_FACTURE', 'Invoice', invoiceId, 'EN_ATTENTE', 'PAYEE', `Paiement total reçu de ${amountPaid} FC via ${method}. Table ${invoice.tableCode} libérée.`);
       addNotification(`Paiement de ${amountPaid} FC reçu. Facture ${invoice.invoiceNumber} SOLDÉE. Table libérée !`, 'success');
@@ -1603,16 +1687,21 @@ export const RestaurantProvider: React.FC<{ children: React.ReactNode }> = ({ ch
     const [currentHour, currentMin] = [now.getHours(), now.getMinutes()];
     const currentTotalMinutes = currentHour * 60 + currentMin;
 
-    // Scheduled start time
-    const [schedHour, schedMin] = (emp.scheduledShiftStart || '08:00').split(':').map(Number);
-    const scheduledTotalMinutes = schedHour * 60 + schedMin;
+    const { data: workRules } = await supabase
+      .from('work_rules')
+      .select('work_start, late_after_minutes')
+      .eq('id', true)
+      .maybeSingle();
+    const scheduledStart = String(emp.scheduledShiftStart || workRules?.work_start || '08:00').slice(0, 5);
+    const [schedHour, schedMin] = scheduledStart.split(':').map(Number);
+    const scheduledTotalMinutes = (schedHour || 0) * 60 + (schedMin || 0);
+    const lateAfterMinutes = Number(workRules?.late_after_minutes ?? 5);
 
-    // Delay calculation
     let delayMinutes = 0;
     let status: AttendanceStatus = 'PRESENT';
 
     if (type === 'ENTREE') {
-      if (currentTotalMinutes > scheduledTotalMinutes + 5) { // 5 minutes tolerance
+      if (currentTotalMinutes > scheduledTotalMinutes + lateAfterMinutes) {
         delayMinutes = currentTotalMinutes - scheduledTotalMinutes;
         status = 'RETARD';
       }
@@ -1629,7 +1718,7 @@ export const RestaurantProvider: React.FC<{ children: React.ReactNode }> = ({ ch
       time: timeStr,
       type,
       timestamp: Date.now(),
-      scheduledTime: emp.scheduledShiftStart,
+      scheduledTime: scheduledStart,
       delayMinutes,
       status,
     };
@@ -1711,19 +1800,19 @@ export const RestaurantProvider: React.FC<{ children: React.ReactNode }> = ({ ch
     return true;
   }, [currentUser, logAudit, addNotification]);
 
-  const updateExpense = useCallback((id: string, updates: Partial<Expense>) => {
+  const updateExpense = useCallback(async (id: string, updates: Partial<Expense>): Promise<boolean> => {
     const existing = expenses.find(expense => expense.id === id);
-    if (!existing) return;
+    if (!existing) return false;
     const updated = { ...existing, ...updates };
-    void supabase.from('expenses').update({ category: updated.category, item_name: updated.itemName || null, quantity: updated.quantity || null, description: updated.description, amount: updated.amount, payment_method: updated.paymentMethod, supplier: updated.supplier || null, reference: updated.reference || null, expense_date: updated.date }).eq('id', id).then(({ error }) => {
-      if (error) {
-        addNotification(`Dépense non modifiée dans Supabase : ${error.message}`, 'error');
-        return;
-      }
-      setExpenses(prev => prev.map(expense => expense.id === id ? updated : expense));
-      logAudit('MODIFICATION_DEPENSE', 'Expense', id, JSON.stringify(existing), JSON.stringify(updated), `Modification dépense ${updated.description}`);
-      addNotification('Dépense mise à jour.', 'info');
-    });
+    const { error } = await supabase.from('expenses').update({ category: updated.category, item_name: updated.itemName || null, quantity: updated.quantity || null, description: updated.description, amount: updated.amount, payment_method: updated.paymentMethod, supplier: updated.supplier || null, reference: updated.reference || null, expense_date: updated.date }).eq('id', id);
+    if (error) {
+      addNotification(`Dépense non modifiée dans Supabase : ${error.message}`, 'error');
+      return false;
+    }
+    setExpenses(prev => prev.map(expense => expense.id === id ? updated : expense));
+    logAudit('MODIFICATION_DEPENSE', 'Expense', id, JSON.stringify(existing), JSON.stringify(updated), `Modification dépense ${updated.description}`);
+    addNotification('Dépense mise à jour.', 'info');
+    return true;
   }, [expenses, logAudit, addNotification]);
 
   const deleteExpense = useCallback((id: string) => {
@@ -1877,6 +1966,7 @@ export const RestaurantProvider: React.FC<{ children: React.ReactNode }> = ({ ch
         deleteTable,
 
         generateInvoiceForTable,
+        generateInvoiceForOrders,
         recordPayment,
 
         addProduct,
