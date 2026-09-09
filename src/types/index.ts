@@ -99,6 +99,32 @@ export interface Ingredient {
   unit: string;
   unitCost: number;
   lastExpenseId?: string;
+  category?: string;
+  stockQty: number;
+  minStock: number;
+}
+
+export interface StockMovement {
+  id: string;
+  ingredientId: string;
+  ingredientName: string;
+  movementType: 'ENTREE' | 'SORTIE';
+  quantity: number;
+  unit: string;
+  reason: string;
+  recordedBy: string;
+  createdAt: string;
+}
+
+export interface SalaryPayment {
+  id: string;
+  employeeId: string;
+  employeeName: string;
+  amount: number;
+  periodMonth: string;
+  status: 'PAYE' | 'ANNULE';
+  expenseId?: string;
+  paidAt: string;
 }
 
 export interface RecipeIngredient {
@@ -106,6 +132,16 @@ export interface RecipeIngredient {
   productId: string;
   ingredientId: string;
   quantity: number;
+}
+
+export interface KitchenPreparation {
+  id: string;
+  productId: string;
+  productName: string;
+  quantity: number;
+  notes?: string;
+  recordedBy: string;
+  preparedAt: string;
 }
 
 export type TableStatus = 'LIBRE' | 'OCCUPEE' | 'COMMANDE_EN_COURS' | 'A_PAYER' | 'NETTOYAGE';
@@ -238,6 +274,7 @@ export interface Expense {
   paymentMethod: PaymentMethod;
   supplier?: string;
   reference?: string;
+  unit?: string;
   receiptUrl?: string;
   recordedBy: string;
   createdAt: string;

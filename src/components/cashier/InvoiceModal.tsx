@@ -1,8 +1,9 @@
-import React from 'react';
+import React, { useEffect, useState } from 'react';
 import { useRestaurant } from '../../context/RestaurantContext';
 import { Invoice } from '../../types';
-import { invoiceGuestLabel, invoiceLineItems } from '../../lib/cashierOrders';
+import { ALIPAY_PAY_QR_SRC, invoiceGuestLabel, invoiceLineItems, WECHAT_PAY_QR_SRC } from '../../lib/cashierOrders';
 import { KinMarcheReceipt } from './KinMarcheReceipt';
+import { imageToThermalQrPng, RECEIPT_PRINT_CSS } from '../../utils/printReceipt';
 import { X, Printer, Receipt, CreditCard } from 'lucide-react';
 import { formatFC } from '../../utils/formatters';
 
@@ -18,6 +19,28 @@ export const InvoiceModal: React.FC<InvoiceModalProps> = ({
   onProceedToPayment,
 }) => {
   const { restaurantInfo, orders } = useRestaurant();
+  const [wechatQrSrc, setWechatQrSrc] = useState(WECHAT_PAY_QR_SRC);
+  const [alipayQrSrc, setAlipayQrSrc] = useState(ALIPAY_PAY_QR_SRC);
+
+  useEffect(() => {
+    let cancelled = false;
+    const sharpen = async () => {
+      try {
+        const [wechat, alipay] = await Promise.all([
+          imageToThermalQrPng(WECHAT_PAY_QR_SRC),
+          imageToThermalQrPng(ALIPAY_PAY_QR_SRC),
+        ]);
+        if (!cancelled) {
+          setWechatQrSrc(wechat);
+          setAlipayQrSrc(alipay);
+        }
+      } catch {
+        /* keep original JPEG if canvas conversion fails */
+      }
+    };
+    void sharpen();
+    return () => { cancelled = true; };
+  }, []);
 
   if (!invoice) return null;
 
@@ -38,13 +61,7 @@ export const InvoiceModal: React.FC<InvoiceModalProps> = ({
     }
 
     frameDocument.open();
-    frameDocument.write(`<!DOCTYPE html><html><head><meta charset="utf-8"/><title>${invoice.invoiceNumber}</title><style>
-      @page { size: 80mm auto; margin: 0; }
-      html, body { margin: 0; padding: 0; background: #fff; color: #000; }
-      body { width: 80mm; }
-      #umoja-print-receipt { width: 72mm !important; max-width: 72mm !important; margin: 4mm auto !important; }
-      img { max-width: 100%; height: auto; image-rendering: pixelated; }
-    </style></head><body>${source.outerHTML}</body></html>`);
+    frameDocument.write(`<!DOCTYPE html><html><head><meta charset="utf-8"/><title>${invoice.invoiceNumber}</title><style>${RECEIPT_PRINT_CSS}</style></head><body>${source.outerHTML}</body></html>`);
     frameDocument.close();
 
     const printFrame = () => {
@@ -61,10 +78,10 @@ export const InvoiceModal: React.FC<InvoiceModalProps> = ({
     let remaining = images.length;
     const markDone = () => {
       remaining -= 1;
-      if (remaining <= 0) printFrame();
+      if (remaining <= 0) window.setTimeout(printFrame, 120);
     };
     images.forEach(image => {
-      if (image.complete) markDone();
+      if (image.complete && image.naturalWidth > 0) markDone();
       else {
         image.addEventListener('load', markDone, { once: true });
         image.addEventListener('error', markDone, { once: true });
@@ -111,6 +128,8 @@ export const InvoiceModal: React.FC<InvoiceModalProps> = ({
             restaurantInfo={restaurantInfo}
             items={items}
             guestLabel={guestLabel}
+            wechatQrSrc={wechatQrSrc}
+            alipayQrSrc={alipayQrSrc}
           />
         </div>
 

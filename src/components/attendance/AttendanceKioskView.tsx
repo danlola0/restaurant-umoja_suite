@@ -13,6 +13,7 @@ import {
   ShieldCheck,
   UserCheck,
 } from 'lucide-react';
+import { ServedOrdersPanel } from './ServedOrdersPanel';
 
 interface AttendanceKioskViewProps {
   onNavigate?: (path: string) => void;
@@ -135,6 +136,11 @@ export const AttendanceKioskView: React.FC<AttendanceKioskViewProps> = ({ onNavi
           </div>
         </div>
       </section>
+      {(currentRole === 'SERVEUR' || currentRole === 'EMPLOYE') && (
+        <div className="mx-auto mt-6 max-w-xl">
+          <ServedOrdersPanel />
+        </div>
+      )}
     </div>
   );
 };

@@ -1,5 +1,18 @@
 @import "tailwindcss";
 
+.umoja-datetime {
+	color-scheme: dark;
+	color: #fafaf9;
+}
+.umoja-datetime::-webkit-calendar-picker-indicator {
+	opacity: 0;
+	position: absolute;
+	inset: 0;
+	width: 100%;
+	height: 100%;
+	cursor: pointer;
+}
+
 html,
 body,
 #root {
@@ -49,5 +62,10 @@ body,
 		margin: 0 auto !important;
 		background: #fff !important;
 		color: #000 !important;
+	}
+	.umoja-qr {
+		width: 28mm !important;
+		height: 28mm !important;
+		image-rendering: crisp-edges !important;
 	}
 }

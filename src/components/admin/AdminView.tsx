@@ -8,7 +8,8 @@ import {
   TrendingDown, 
   CreditCard, 
   FileSpreadsheet, 
-  ShieldCheck 
+  ShieldCheck,
+  Package
 } from 'lucide-react';
 import { AdminDashboard } from './AdminDashboard';
 import { MenuManager } from './MenuManager';
@@ -16,6 +17,7 @@ import { TableManager } from './TableManager';
 import { StaffManager } from './StaffManager';
 import { AttendanceManager } from './AttendanceManager';
 import { ExpenseManager } from './ExpenseManager';
+import { StockManager } from './StockManager';
 import { CashRegisterManager } from './CashRegisterManager';
 import { ReportsManager } from './ReportsManager';
 import { AuditLogViewer } from './AuditLogViewer';
@@ -27,6 +29,7 @@ export type AdminTab =
   | 'STAFF'
   | 'ATTENDANCE'
   | 'EXPENSES'
+  | 'STOCKS'
   | 'CASH_REGISTER'
   | 'REPORTS'
   | 'AUDIT';
@@ -41,6 +44,7 @@ export const AdminView: React.FC = () => {
     { id: 'STAFF', label: 'Personnel RH', icon: Users },
     { id: 'ATTENDANCE', label: 'Pointages', icon: Clock },
     { id: 'EXPENSES', label: 'Dépenses & Achats', icon: TrendingDown },
+    { id: 'STOCKS', label: 'Stocks', icon: Package },
     { id: 'CASH_REGISTER', label: 'Caisse & Clôture', icon: CreditCard },
     { id: 'REPORTS', label: 'Rapports & Exports', icon: FileSpreadsheet },
     { id: 'AUDIT', label: 'Journal d\'Audit', icon: ShieldCheck },
@@ -81,6 +85,7 @@ export const AdminView: React.FC = () => {
         {activeTab === 'STAFF' && <StaffManager />}
         {activeTab === 'ATTENDANCE' && <AttendanceManager />}
         {activeTab === 'EXPENSES' && <ExpenseManager />}
+        {activeTab === 'STOCKS' && <StockManager />}
         {activeTab === 'CASH_REGISTER' && <CashRegisterManager />}
         {activeTab === 'REPORTS' && <ReportsManager />}
         {activeTab === 'AUDIT' && <AuditLogViewer />}

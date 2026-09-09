@@ -7,6 +7,9 @@ import {
   Product,
   Ingredient,
   RecipeIngredient,
+  KitchenPreparation,
+  StockMovement,
+  SalaryPayment,
   RestaurantTable,
   Order,
   OrderStatus,
@@ -40,6 +43,8 @@ import {
 } from '../data/seedData';
 import { playNotificationSound } from '../utils/formatters';
 import { supabase } from '../lib/supabase';
+import { isPurchaseCategory } from '../utils/expenseCatalog';
+import { findIngredientByName } from '../utils/profitability';
 
 interface NotificationItem {
   id: string;
@@ -60,6 +65,9 @@ interface RestaurantContextType {
   products: Product[];
   ingredients: Ingredient[];
   recipeIngredients: RecipeIngredient[];
+  kitchenPreparations: KitchenPreparation[];
+  stockMovements: StockMovement[];
+  salaryPayments: SalaryPayment[];
   tables: RestaurantTable[];
   orders: Order[];
   tableSessions: TableSession[];
@@ -116,9 +124,13 @@ interface RestaurantContextType {
   updateProduct: (id: string, updates: Partial<Product>) => Promise<boolean>;
   deleteProduct: (id: string) => Promise<void>;
   toggleProductAvailability: (id: string) => Promise<void>;
-  addIngredient: (name: string, unit: string, unitCost: number) => Promise<boolean>;
+  addIngredient: (name: string, unit: string, unitCost: number, extras?: { category?: string; stockQty?: number; minStock?: number }) => Promise<boolean>;
   setRecipeIngredient: (productId: string, ingredientId: string, quantity: number) => Promise<boolean>;
   removeRecipeIngredient: (recipeIngredientId: string) => Promise<boolean>;
+  recordKitchenPreparation: (productId: string, quantity: number, notes?: string) => Promise<boolean>;
+  applyStockMovement: (input: { ingredientId?: string; name: string; category?: string; unit: string; quantity: number; type: 'ENTREE' | 'SORTIE'; reason: string; unitCost?: number; notify?: boolean }) => Promise<{ ok: boolean; remaining: number; name: string }>;
+  updateStockItem: (id: string, updates: { minStock?: number; category?: string }) => Promise<boolean>;
+  payEmployeeSalary: (employeeId: string, periodMonth: string, confirmDuplicate?: boolean, occurredAt?: string) => Promise<boolean>;
   addCategory: (cat: Omit<Category, 'id'>) => void;
   updateCategory: (id: string, updates: Partial<Category>) => void;
   deleteCategory: (id: string) => void;
@@ -135,10 +147,10 @@ interface RestaurantContextType {
   correctAttendance: (recordId: string, newStatus: AttendanceStatus, reason: string, adminName: string) => void;
 
   // Expenses
-  recordExpense: (data: Omit<Expense, 'id' | 'createdAt'>) => Promise<boolean>;
+  recordExpense: (data: Omit<Expense, 'id' | 'createdAt'> & { createdAt?: string }) => Promise<boolean>;
   updateExpense: (id: string, updates: Partial<Expense>) => Promise<boolean>;
   deleteExpense: (id: string) => void;
-  addExpenseCategory: (name: string, iconName?: string) => void;
+  addExpenseCategory: (name: string, iconName?: string) => Promise<boolean>;
 
   // Cash Register
   openCashRegister: (openingBalance: number, openedBy: string) => void;
@@ -201,6 +213,34 @@ const productToSupabase = (product: Product) => ({
   preparation_time_minutes: product.preparationTimeMinutes,
   spicy_level: product.spicyLevel || 0,
   tags: product.tags || [],
+});
+
+const expenseFromSupabase = (row: any): Expense => ({
+  id: row.id,
+  date: row.expense_date,
+  service: row.service || 'ADMINISTRATION',
+  category: row.category,
+  itemName: row.item_name || undefined,
+  quantity: row.quantity === null || row.quantity === undefined ? undefined : Number(row.quantity),
+  unit: row.unit || row.reference || undefined,
+  description: row.description,
+  amount: Number(row.amount),
+  paymentMethod: row.payment_method,
+  supplier: row.supplier || undefined,
+  reference: row.reference || undefined,
+  recordedBy: row.recorded_by || 'Utilisateur autorisé',
+  createdAt: row.created_at,
+});
+
+const ingredientFromSupabase = (row: any): Ingredient => ({
+  id: row.id,
+  name: row.name,
+  unit: row.unit,
+  unitCost: Number(row.unit_cost),
+  lastExpenseId: row.last_expense_id || undefined,
+  category: row.category || 'Divers',
+  stockQty: Number(row.stock_qty || 0),
+  minStock: Number(row.min_stock || 0),
 });
 
 const employeeFromSupabase = (row: any): Employee => ({
@@ -355,6 +395,9 @@ export const RestaurantProvider: React.FC<{ children: React.ReactNode }> = ({ ch
   });
   const [ingredients, setIngredients] = useState<Ingredient[]>([]);
   const [recipeIngredients, setRecipeIngredients] = useState<RecipeIngredient[]>([]);
+  const [kitchenPreparations, setKitchenPreparations] = useState<KitchenPreparation[]>([]);
+  const [stockMovements, setStockMovements] = useState<StockMovement[]>([]);
+  const [salaryPayments, setSalaryPayments] = useState<SalaryPayment[]>([]);
 
   const [tables, setTables] = useState<RestaurantTable[]>(() => 
     loadFromStorage('tables', initialTables)
@@ -530,6 +573,7 @@ export const RestaurantProvider: React.FC<{ children: React.ReactNode }> = ({ ch
       const today = new Date().toISOString().slice(0, 10);
       const paymentsToday = paymentsFromDatabase.filter(payment => payment.createdAt.slice(0, 10) === today);
       const salesFor = (methods: PaymentMethod[]) => paymentsToday.filter(payment => methods.includes(payment.paymentMethod)).reduce((sum, payment) => sum + payment.amount, 0);
+      if (expensesResult.data) setExpenses(expensesResult.data.map(expenseFromSupabase));
       const expensesToday = (expensesResult.data || []).filter((expense: any) => expense.expense_date === today && expense.payment_method === 'ESPECES').reduce((sum: number, expense: any) => sum + Number(expense.amount), 0);
       const session = sessionsResult.data?.[0];
       if (session) {
@@ -965,7 +1009,7 @@ export const RestaurantProvider: React.FC<{ children: React.ReactNode }> = ({ ch
         const employee = employeeById.get(row.employee_id);
         return { id: row.id, employeeId: row.employee_id, matricule: employee?.matricule || '', employeeName: employee ? `${employee.prenom} ${employee.nom}` : 'Employé inconnu', employeePhoto: employee?.photo || '', employeePosition: employee?.poste || '', date: row.date, time: row.time, type: row.type, timestamp: new Date(row.created_at).getTime(), scheduledTime: employee?.scheduledShiftStart || '', delayMinutes: row.delay_minutes, status: row.status, isManualCorrection: row.is_manual_correction, correctionReason: row.correction_reason };
       }));
-      if (expensesResult.data) setExpenses(expensesResult.data.map((row: any) => ({ id: row.id, date: row.expense_date, service: row.service || 'ADMINISTRATION', category: row.category, itemName: row.item_name || undefined, quantity: row.quantity === null ? undefined : Number(row.quantity), description: row.description, amount: Number(row.amount), paymentMethod: row.payment_method, supplier: row.supplier || undefined, reference: row.reference || undefined, recordedBy: row.recorded_by || 'Utilisateur autorisé', createdAt: row.created_at })));
+      if (expensesResult.data) setExpenses(expensesResult.data.map(expenseFromSupabase));
       if (expenseCategoriesResult.data) setExpenseCategories(expenseCategoriesResult.data.map((row: any) => ({ id: row.id, name: row.name, iconName: row.icon_name, isDefault: row.is_default })));
       if (invoicesResult.data) setInvoices(invoicesResult.data.map((row: any) => ({ id: row.id, invoiceNumber: row.invoice_number, sessionId: row.table_session_id || '', tableId: row.table_id || '', tableCode: row.table_code || '', orderIds: row.order_ids || [], items: [], subtotal: Number(row.subtotal), discountAmount: Number(row.discount_amount), taxAmount: Number(row.tax_amount), totalAmount: Number(row.total_amount), paidAmount: Number(row.paid_amount), remainingAmount: Math.max(0, Number(row.total_amount) - Number(row.paid_amount)), status: row.status, createdAt: row.created_at, paidAt: row.paid_at || undefined, cashierName: row.cashier_name || '', paymentMethod: row.payment_method, paymentReference: row.payment_reference || undefined })));
       if (paymentsResult.data) setPaymentTransactions(paymentsResult.data.map((row: any) => ({ id: row.id, invoiceId: row.invoice_id, tableId: '', tableCode: '', amount: Number(row.amount), paymentMethod: row.payment_method, reference: row.reference || undefined, note: row.note || undefined, createdAt: row.created_at, cashierName: row.recorded_by || 'Utilisateur autorisé' })));
@@ -984,21 +1028,75 @@ export const RestaurantProvider: React.FC<{ children: React.ReactNode }> = ({ ch
   }, [authEmail, currentRole, addNotification]);
 
   useEffect(() => {
-    if (!authEmail || !['ADMINISTRATEUR', 'RESPONSABLE'].includes(currentRole)) return;
+    if (!authEmail || !['ADMINISTRATEUR', 'RESPONSABLE', 'CUISINE', 'CAISSIER', 'SERVEUR'].includes(currentRole)) return;
     const loadRecipeData = async () => {
-      const [ingredientsResult, recipeIngredientsResult] = await Promise.all([
+      const [ingredientsResult, recipeIngredientsResult, preparationsResult, movementsResult, salariesResult] = await Promise.all([
         supabase.from('ingredients').select('*').order('name'),
         supabase.from('recipe_ingredients').select('*'),
+        supabase.from('kitchen_preparations').select('*').order('prepared_at', { ascending: false }).limit(200),
+        supabase.from('stock_movements').select('*').order('created_at', { ascending: false }).limit(300),
+        supabase.from('salary_payments').select('*').order('paid_at', { ascending: false }).limit(200),
       ]);
-      if (ingredientsResult.error || recipeIngredientsResult.error) {
-        addNotification(`Recettes non chargées : ${ingredientsResult.error?.message || recipeIngredientsResult.error?.message}`, 'error');
-        return;
+      if (!ingredientsResult.error) {
+        setIngredients((ingredientsResult.data || []).map(ingredientFromSupabase));
       }
-      setIngredients((ingredientsResult.data || []).map((row: any) => ({ id: row.id, name: row.name, unit: row.unit, unitCost: Number(row.unit_cost), lastExpenseId: row.last_expense_id || undefined })));
-      setRecipeIngredients((recipeIngredientsResult.data || []).map((row: any) => ({ id: row.id, productId: row.product_id, ingredientId: row.ingredient_id, quantity: Number(row.quantity) })));
+      if (!recipeIngredientsResult.error) {
+        setRecipeIngredients((recipeIngredientsResult.data || []).map((row: any) => ({ id: row.id, productId: row.product_id, ingredientId: row.ingredient_id, quantity: Number(row.quantity) })));
+      }
+      if (!preparationsResult.error) {
+        setKitchenPreparations((preparationsResult.data || []).map((row: any) => ({
+          id: row.id,
+          productId: row.product_id || '',
+          productName: row.product_name,
+          quantity: Number(row.quantity),
+          notes: row.notes || undefined,
+          recordedBy: row.recorded_by || '',
+          preparedAt: row.prepared_at,
+        })));
+      }
+      if (!movementsResult.error) {
+        setStockMovements((movementsResult.data || []).map((row: any) => ({
+          id: row.id,
+          ingredientId: row.ingredient_id || '',
+          ingredientName: row.ingredient_name,
+          movementType: row.movement_type,
+          quantity: Number(row.quantity),
+          unit: row.unit,
+          reason: row.reason || '',
+          recordedBy: row.recorded_by || '',
+          createdAt: row.created_at,
+        })));
+      }
+      if (!salariesResult.error) {
+        setSalaryPayments((salariesResult.data || []).map((row: any) => ({
+          id: row.id,
+          employeeId: row.employee_id || '',
+          employeeName: row.employee_name,
+          amount: Number(row.amount),
+          periodMonth: row.period_month,
+          status: row.status,
+          expenseId: row.expense_id || undefined,
+          paidAt: row.paid_at,
+        })));
+      }
     };
     void loadRecipeData();
   }, [authEmail, currentRole, addNotification]);
+
+  useEffect(() => {
+    if (!authEmail || currentRole !== 'CUISINE') return;
+    const loadKitchenExpenses = async () => {
+      const [expensesResult, categoriesResult] = await Promise.all([
+        supabase.from('expenses').select('*').eq('service', 'CUISINE').order('created_at', { ascending: false }),
+        supabase.from('expense_categories').select('*').order('name'),
+      ]);
+      if (!expensesResult.error && expensesResult.data) setExpenses(expensesResult.data.map(expenseFromSupabase));
+      if (!categoriesResult.error && categoriesResult.data) {
+        setExpenseCategories(categoriesResult.data.map((row: any) => ({ id: row.id, name: row.name, iconName: row.icon_name, isDefault: row.is_default })));
+      }
+    };
+    void loadKitchenExpenses();
+  }, [authEmail, currentRole]);
 
   // Audit logging helper
   const logAudit = useCallback((
@@ -1673,9 +1771,29 @@ export const RestaurantProvider: React.FC<{ children: React.ReactNode }> = ({ ch
     }));
   }, [products, logAudit, addNotification]);
 
-  const addIngredient = useCallback(async (name: string, unit: string, unitCost: number): Promise<boolean> => {
-    const ingredient: Ingredient = { id: `ing-${Date.now()}`, name: name.trim(), unit: unit.trim() || 'unité', unitCost };
-    const { error } = await supabase.from('ingredients').insert({ id: ingredient.id, name: ingredient.name, unit: ingredient.unit, unit_cost: ingredient.unitCost });
+  const addIngredient = useCallback(async (name: string, unit: string, unitCost: number, extras?: { category?: string; stockQty?: number; minStock?: number }): Promise<boolean> => {
+    const ingredient: Ingredient = {
+      id: `ing-${Date.now()}`,
+      name: name.trim(),
+      unit: unit.trim() || 'unité',
+      unitCost,
+      category: extras?.category || 'Divers',
+      stockQty: extras?.stockQty || 0,
+      minStock: extras?.minStock || 0,
+    };
+    const payload: Record<string, unknown> = {
+      id: ingredient.id,
+      name: ingredient.name,
+      unit: ingredient.unit,
+      unit_cost: ingredient.unitCost,
+      category: ingredient.category,
+      stock_qty: ingredient.stockQty,
+      min_stock: ingredient.minStock,
+    };
+    let { error } = await supabase.from('ingredients').insert(payload);
+    if (error && /stock_qty|min_stock|category/i.test(error.message)) {
+      ({ error } = await supabase.from('ingredients').insert({ id: ingredient.id, name: ingredient.name, unit: ingredient.unit, unit_cost: ingredient.unitCost }));
+    }
     if (error) {
       addNotification(`Ingrédient non enregistré : ${error.message}`, 'error');
       return false;
@@ -1684,6 +1802,127 @@ export const RestaurantProvider: React.FC<{ children: React.ReactNode }> = ({ ch
     logAudit('CREATION_INGREDIENT', 'Ingredient', ingredient.id, undefined, ingredient.name, `Coût unitaire : ${ingredient.unitCost}`);
     return true;
   }, [logAudit, addNotification]);
+
+  const applyStockMovement = useCallback(async (input: { ingredientId?: string; name: string; category?: string; unit: string; quantity: number; type: 'ENTREE' | 'SORTIE'; reason: string; unitCost?: number; notify?: boolean }): Promise<{ ok: boolean; remaining: number; name: string }> => {
+    if (input.quantity <= 0) return { ok: false, remaining: 0, name: input.name };
+    const { data: authData } = await supabase.auth.getUser();
+    let ingredient = input.ingredientId
+      ? ingredients.find(item => item.id === input.ingredientId)
+      : findIngredientByName(input.name, ingredients);
+    if (!ingredient) {
+      const created = await addIngredient(input.name, input.unit, input.unitCost || 0, { category: input.category, stockQty: 0, minStock: 0 });
+      if (!created) return { ok: false, remaining: 0, name: input.name };
+      const { data: latest } = await supabase.from('ingredients').select('*').eq('name', input.name.trim()).maybeSingle();
+      if (!latest) return { ok: false, remaining: 0, name: input.name };
+      ingredient = ingredientFromSupabase(latest);
+    }
+    const current = Number(ingredient.stockQty || 0);
+    const remaining = input.type === 'ENTREE' ? current + input.quantity : current - input.quantity;
+    if (input.type === 'SORTIE' && remaining < -0.0001) {
+      addNotification(`Stock insuffisant pour ${ingredient.name} (${current} ${ingredient.unit} disponibles).`, 'error');
+      return { ok: false, remaining: current, name: ingredient.name };
+    }
+    const nextQty = Math.max(0, remaining);
+    const updatePayload: Record<string, unknown> = {
+      stock_qty: nextQty,
+      unit: input.unit || ingredient.unit,
+      category: input.category || ingredient.category,
+    };
+    if (input.unitCost && input.unitCost > 0) updatePayload.unit_cost = input.unitCost;
+    let { error } = await supabase.from('ingredients').update(updatePayload).eq('id', ingredient.id);
+    if (error && /stock_qty|min_stock|category/i.test(error.message)) {
+      addNotification('Colonnes de stock absentes. Exécutez supabase/stock-management.sql dans Supabase.', 'error');
+      return { ok: false, remaining: current, name: ingredient.name };
+    }
+    if (error) {
+      addNotification(`Stock non mis à jour : ${error.message}`, 'error');
+      return { ok: false, remaining: current, name: ingredient.name };
+    }
+    const movement: StockMovement = {
+      id: `mov-${Date.now()}-${Math.random().toString(16).slice(2, 6)}`,
+      ingredientId: ingredient.id,
+      ingredientName: ingredient.name,
+      movementType: input.type,
+      quantity: input.quantity,
+      unit: input.unit || ingredient.unit,
+      reason: input.reason,
+      recordedBy: currentUser ? `${currentUser.prenom} ${currentUser.nom}` : 'Utilisateur',
+      createdAt: new Date().toISOString(),
+    };
+    await supabase.from('stock_movements').insert({
+      id: movement.id,
+      ingredient_id: ingredient.id,
+      ingredient_name: ingredient.name,
+      movement_type: input.type,
+      quantity: input.quantity,
+      unit: movement.unit,
+      reason: input.reason,
+      recorded_by: authData.user?.id || currentUser?.auth_user_id || null,
+      created_at: movement.createdAt,
+    });
+    setIngredients(previous => previous.map(item => item.id === ingredient!.id ? { ...item, stockQty: nextQty, unit: input.unit || item.unit, category: input.category || item.category, unitCost: input.unitCost || item.unitCost } : item));
+    setStockMovements(previous => [movement, ...previous]);
+    if (input.notify !== false) {
+      if (nextQty <= 0) addNotification(`Rupture de stock — réapprovisionnement nécessaire (${ingredient.name}).`, 'warning');
+      else if (ingredient.minStock > 0 && nextQty <= ingredient.minStock) addNotification(`Stock faible — veuillez réapprovisionner ${ingredient.name} (${nextQty} ${ingredient.unit}).`, 'warning');
+      else if (input.type === 'ENTREE') addNotification(`${ingredient.name} : ${nextQty} ${ingredient.unit} en stock.`, 'success');
+      else addNotification(`${ingredient.name} : ${nextQty} ${ingredient.unit} restants.`, 'info');
+    }
+    return { ok: true, remaining: nextQty, name: ingredient.name };
+  }, [ingredients, addIngredient, currentUser, addNotification]);
+
+  const stockBackfillDone = useRef(false);
+  useEffect(() => {
+    if (!['ADMINISTRATEUR', 'RESPONSABLE'].includes(currentRole)) return;
+    if (stockBackfillDone.current) return;
+    if (ingredients.length === 0) return;
+    const purchases = expenses.filter(expense => isPurchaseCategory(expense.category) && Number(expense.quantity) > 0);
+    if (purchases.length === 0) return;
+    const already = new Set(
+      stockMovements
+        .map(movement => movement.reason)
+        .filter(reason => reason.includes('expense:'))
+        .map(reason => reason.slice(reason.indexOf('expense:') + 8).trim())
+    );
+    const pending = purchases.filter(expense => !already.has(expense.id));
+    if (pending.length === 0) {
+      stockBackfillDone.current = true;
+      return;
+    }
+    stockBackfillDone.current = true;
+    void (async () => {
+      let applied = 0;
+      for (const expense of pending) {
+        const result = await applyStockMovement({
+          name: (expense.itemName || expense.description).trim(),
+          category: expense.category,
+          unit: expense.unit || 'kg',
+          quantity: Number(expense.quantity),
+          type: 'ENTREE',
+          reason: `Achat dépense expense:${expense.id}`,
+          unitCost: Number(expense.quantity) ? expense.amount / Number(expense.quantity) : 0,
+          notify: false,
+        });
+        if (result.ok) applied += 1;
+      }
+      if (applied > 0) {
+        addNotification(`${applied} achat(s) des dépenses ont alimenté le stock.`, 'success');
+      }
+    })();
+  }, [currentRole, expenses, ingredients, stockMovements, applyStockMovement, addNotification]);
+
+  const updateStockItem = useCallback(async (id: string, updates: { minStock?: number; category?: string }): Promise<boolean> => {
+    const payload: Record<string, unknown> = {};
+    if (updates.minStock !== undefined) payload.min_stock = updates.minStock;
+    if (updates.category) payload.category = updates.category;
+    const { error } = await supabase.from('ingredients').update(payload).eq('id', id);
+    if (error) {
+      addNotification(`Article de stock non modifié : ${error.message}`, 'error');
+      return false;
+    }
+    setIngredients(previous => previous.map(item => item.id === id ? { ...item, minStock: updates.minStock ?? item.minStock, category: updates.category || item.category } : item));
+    return true;
+  }, [addNotification]);
 
   const setRecipeIngredient = useCallback(async (productId: string, ingredientId: string, quantity: number): Promise<boolean> => {
     const existing = recipeIngredients.find(item => item.productId === productId && item.ingredientId === ingredientId);
@@ -1706,6 +1945,52 @@ export const RestaurantProvider: React.FC<{ children: React.ReactNode }> = ({ ch
     setRecipeIngredients(previous => previous.filter(item => item.id !== recipeIngredientId));
     return true;
   }, [addNotification]);
+
+  const recordKitchenPreparation = useCallback(async (productId: string, quantity: number, notes?: string): Promise<boolean> => {
+    const product = products.find(item => item.id === productId);
+    if (!product || quantity <= 0) return false;
+    const preparation: KitchenPreparation = {
+      id: `prep-${Date.now()}`,
+      productId,
+      productName: product.name,
+      quantity,
+      notes: notes?.trim() || undefined,
+      recordedBy: currentUser ? `${currentUser.prenom} ${currentUser.nom}` : 'Cuisine',
+      preparedAt: new Date().toISOString(),
+    };
+    const { data: authData } = await supabase.auth.getUser();
+    const recordedById = authData.user?.id || currentUser?.auth_user_id || null;
+    const { error } = await supabase.from('kitchen_preparations').insert({
+      id: preparation.id,
+      product_id: product.id,
+      product_name: product.name,
+      quantity,
+      notes: preparation.notes || null,
+      recorded_by: recordedById,
+      prepared_at: preparation.preparedAt,
+    });
+    if (error) {
+      addNotification(`Préparation non enregistrée dans Supabase : ${error.message}. Exécutez supabase/profitability-trace.sql si la table manque.`, 'error');
+      return false;
+    }
+    setKitchenPreparations(previous => [preparation, ...previous]);
+    const recipeLines = recipeIngredients.filter(item => item.productId === product.id);
+    for (const line of recipeLines) {
+      const ingredient = ingredients.find(item => item.id === line.ingredientId);
+      if (!ingredient) continue;
+      await applyStockMovement({
+        ingredientId: ingredient.id,
+        name: ingredient.name,
+        unit: ingredient.unit,
+        quantity: line.quantity * quantity,
+        type: 'SORTIE',
+        reason: `Préparation ${product.name} × ${quantity}`,
+      });
+    }
+    logAudit('PREPARATION_CUISINE', 'KitchenPreparation', preparation.id, undefined, `${quantity} x ${product.name}`, preparation.notes);
+    addNotification(`${quantity} x ${product.name} enregistré(s) comme préparé(s).`, 'success');
+    return true;
+  }, [products, currentUser, logAudit, addNotification, recipeIngredients, ingredients, applyStockMovement]);
 
   const addCategory = useCallback((cat: Omit<Category, 'id'>) => {
     const newCat: Category = {
@@ -1946,19 +2231,54 @@ export const RestaurantProvider: React.FC<{ children: React.ReactNode }> = ({ ch
   }, [attendanceRecords, currentUser, logAudit, addNotification]);
 
   // Expense Management
-  const recordExpense = useCallback(async (data: Omit<Expense, 'id' | 'createdAt'>): Promise<boolean> => {
+  const recordExpense = useCallback(async (data: Omit<Expense, 'id' | 'createdAt'> & { createdAt?: string }): Promise<boolean> => {
     const newExpense: Expense = {
       ...data,
       id: 'exp-' + Date.now(),
-      createdAt: new Date().toISOString(),
+      createdAt: data.createdAt || new Date().toISOString(),
     };
 
-    const { error } = await supabase.from('expenses').insert({ id: newExpense.id, service: newExpense.service, category: newExpense.category, item_name: newExpense.itemName || null, quantity: newExpense.quantity || null, description: newExpense.description, amount: newExpense.amount, payment_method: newExpense.paymentMethod, supplier: newExpense.supplier || null, reference: newExpense.reference || null, recorded_by: currentUser?.auth_user_id || null, created_at: newExpense.createdAt, expense_date: newExpense.date });
+    const { data: authData } = await supabase.auth.getUser();
+    const payload: Record<string, unknown> = {
+      id: newExpense.id,
+      service: newExpense.service,
+      category: newExpense.category,
+      item_name: newExpense.itemName || null,
+      quantity: newExpense.quantity || null,
+      unit: newExpense.unit || null,
+      description: newExpense.description,
+      amount: newExpense.amount,
+      payment_method: newExpense.paymentMethod,
+      supplier: newExpense.supplier || null,
+      reference: newExpense.reference || newExpense.unit || null,
+      recorded_by: authData.user?.id || currentUser?.auth_user_id || null,
+      created_at: newExpense.createdAt,
+      expense_date: newExpense.date,
+    };
+    let { error } = await supabase.from('expenses').insert(payload);
+    if (error && /unit/i.test(error.message)) {
+      delete payload.unit;
+      ({ error } = await supabase.from('expenses').insert(payload));
+    }
     if (error) {
       addNotification(`Dépense non enregistrée dans Supabase : ${error.message}`, 'error');
       return false;
     }
     setExpenses(prev => [newExpense, ...prev]);
+
+    if (isPurchaseCategory(newExpense.category) && newExpense.quantity && newExpense.quantity > 0 && ['ADMINISTRATEUR', 'RESPONSABLE'].includes(currentRole)) {
+      const designation = (newExpense.itemName || newExpense.description).trim();
+      const unitCost = newExpense.amount / newExpense.quantity;
+      await applyStockMovement({
+        name: designation,
+        category: newExpense.category,
+        unit: newExpense.unit || 'kg',
+        quantity: newExpense.quantity,
+        type: 'ENTREE',
+        reason: `Achat dépense expense:${newExpense.id}`,
+        unitCost,
+      });
+    }
 
     if (data.paymentMethod === 'ESPECES') {
       setCashRegister(prev => {
@@ -1970,14 +2290,77 @@ export const RestaurantProvider: React.FC<{ children: React.ReactNode }> = ({ ch
     logAudit('NOUVELLE_DEPENSE', 'Expense', newExpense.id, undefined, `${newExpense.amount} FC - ${newExpense.category}`, newExpense.description);
     addNotification(`Dépense de ${newExpense.amount} FC enregistrée (${newExpense.category}).`, 'info');
     return true;
-  }, [currentUser, logAudit, addNotification]);
+  }, [currentUser, currentRole, logAudit, addNotification, applyStockMovement]);
+
+  const payEmployeeSalary = useCallback(async (employeeId: string, periodMonth: string, confirmDuplicate = false, occurredAt?: string): Promise<boolean> => {
+    const employee = employees.find(item => item.id === employeeId);
+    if (!employee) return false;
+    const amount = Number(employee.salaireBase || employee.salaire || 0);
+    if (amount <= 0) {
+      addNotification('Salaire non défini pour cet employé.', 'error');
+      return false;
+    }
+    const alreadyPaid = salaryPayments.find(item => item.employeeId === employeeId && item.periodMonth === periodMonth && item.status === 'PAYE');
+    if (alreadyPaid && !confirmDuplicate) {
+      addNotification(`Salaire déjà payé pour ${periodMonth}. Confirmez pour payer à nouveau.`, 'warning');
+      return false;
+    }
+    const name = `${employee.prenom} ${employee.nom}`;
+    const paidAtDate = occurredAt ? new Date(occurredAt) : new Date();
+    const paidAtIso = Number.isNaN(paidAtDate.getTime()) ? new Date().toISOString() : paidAtDate.toISOString();
+    const expenseDay = occurredAt && occurredAt.length >= 10 ? occurredAt.slice(0, 10) : paidAtIso.slice(0, 10);
+    const recorded = await recordExpense({
+      date: expenseDay,
+      createdAt: paidAtIso,
+      service: 'ADMINISTRATION',
+      category: 'Charges salariales',
+      itemName: name,
+      amount,
+      description: `Salaire ${periodMonth} — ${name}`,
+      paymentMethod: 'ESPECES',
+      recordedBy: currentUser ? `${currentUser.prenom} ${currentUser.nom}` : 'Administrateur',
+    });
+    if (!recorded) return false;
+    const { data: authData } = await supabase.auth.getUser();
+    const payment: SalaryPayment = {
+      id: `sal-${Date.now()}`,
+      employeeId,
+      employeeName: name,
+      amount,
+      periodMonth,
+      status: 'PAYE',
+      paidAt: paidAtIso,
+    };
+    const { error } = await supabase.from('salary_payments').insert({
+      id: payment.id,
+      employee_id: employeeId,
+      employee_name: name,
+      amount,
+      period_month: periodMonth,
+      status: 'PAYE',
+      recorded_by: authData.user?.id || currentUser?.auth_user_id || null,
+      paid_at: payment.paidAt,
+    });
+    if (error) {
+      addNotification(`Salaire enregistré en dépense, mais le suivi RH a échoué : ${error.message}. Exécutez supabase/stock-management.sql.`, 'warning');
+    } else {
+      setSalaryPayments(previous => [payment, ...previous]);
+    }
+    return true;
+  }, [employees, salaryPayments, recordExpense, currentUser, addNotification]);
 
   const updateExpense = useCallback(async (id: string, updates: Partial<Expense>): Promise<boolean> => {
     const existing = expenses.find(expense => expense.id === id);
     if (!existing) return false;
     const updated = { ...existing, ...updates };
-    const { error } = await supabase.from('expenses').update({ category: updated.category, item_name: updated.itemName || null, quantity: updated.quantity || null, description: updated.description, amount: updated.amount, payment_method: updated.paymentMethod, supplier: updated.supplier || null, reference: updated.reference || null, expense_date: updated.date }).eq('id', id);
-    if (error) {
+    const { error } = await supabase.from('expenses').update({ category: updated.category, item_name: updated.itemName || null, quantity: updated.quantity || null, unit: updated.unit || null, description: updated.description, amount: updated.amount, payment_method: updated.paymentMethod, supplier: updated.supplier || null, reference: updated.reference || updated.unit || null, expense_date: updated.date, created_at: updated.createdAt }).eq('id', id);
+    if (error && /unit/i.test(error.message)) {
+      const retry = await supabase.from('expenses').update({ category: updated.category, item_name: updated.itemName || null, quantity: updated.quantity || null, description: updated.description, amount: updated.amount, payment_method: updated.paymentMethod, supplier: updated.supplier || null, reference: updated.reference || updated.unit || null, expense_date: updated.date, created_at: updated.createdAt }).eq('id', id);
+      if (retry.error) {
+        addNotification(`Dépense non modifiée dans Supabase : ${retry.error.message}`, 'error');
+        return false;
+      }
+    } else if (error) {
       addNotification(`Dépense non modifiée dans Supabase : ${error.message}`, 'error');
       return false;
     }
@@ -1999,16 +2382,34 @@ export const RestaurantProvider: React.FC<{ children: React.ReactNode }> = ({ ch
     });
   }, [logAudit, addNotification]);
 
-  const addExpenseCategory = useCallback((name: string, iconName = 'Tag') => {
+  const addExpenseCategory = useCallback(async (name: string, iconName = 'Tag'): Promise<boolean> => {
+    const trimmed = name.trim();
+    if (!trimmed) return false;
+    const existing = expenseCategories.find(item => item.name.toLowerCase() === trimmed.toLowerCase());
+    if (existing) {
+      addNotification(`La catégorie « ${existing.name} » existe déjà.`, 'info');
+      return true;
+    }
     const newCat: ExpenseCategory = {
       id: 'exp-cat-' + Date.now(),
-      name,
+      name: trimmed,
       iconName,
       isDefault: false,
     };
+    const { error } = await supabase.from('expense_categories').insert({
+      id: newCat.id,
+      name: newCat.name,
+      icon_name: iconName,
+      is_default: false,
+    });
+    if (error) {
+      addNotification(`Catégorie non enregistrée dans Supabase : ${error.message}`, 'error');
+      return false;
+    }
     setExpenseCategories(prev => [...prev, newCat]);
-    addNotification(`Catégorie de dépense "${name}" ajoutée.`, 'success');
-  }, [addNotification]);
+    addNotification(`Catégorie de dépense « ${trimmed} » ajoutée.`, 'success');
+    return true;
+  }, [expenseCategories, addNotification]);
 
   // Cash Register Management
   const openCashRegister = useCallback((openingBalance: number, openedBy: string) => {
@@ -2106,6 +2507,9 @@ export const RestaurantProvider: React.FC<{ children: React.ReactNode }> = ({ ch
         products,
         ingredients,
         recipeIngredients,
+        kitchenPreparations,
+        stockMovements,
+        salaryPayments,
         tables,
         orders,
         tableSessions,
@@ -2149,6 +2553,10 @@ export const RestaurantProvider: React.FC<{ children: React.ReactNode }> = ({ ch
         addIngredient,
         setRecipeIngredient,
         removeRecipeIngredient,
+        recordKitchenPreparation,
+        applyStockMovement,
+        updateStockItem,
+        payEmployeeSalary,
         addCategory,
         updateCategory,
         deleteCategory,

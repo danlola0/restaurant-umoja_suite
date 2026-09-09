@@ -3,6 +3,8 @@ import { useRestaurant } from '../../context/RestaurantContext';
 import { Order, OrderStatus } from '../../types';
 import { formatTimeOnly, playNotificationSound } from '../../utils/formatters';
 import { ServiceExpensePanel } from '../common/ServiceExpensePanel';
+import { KitchenPrepPanel } from './KitchenPrepPanel';
+import { KitchenStockPanel } from './KitchenStockPanel';
 import { 
   ChefHat, 
   Clock, 
@@ -188,6 +190,8 @@ export const KitchenKdsView: React.FC = () => {
         </div>
       </div>
 
+      <KitchenPrepPanel />
+      <KitchenStockPanel />
       <ServiceExpensePanel service="CUISINE" title="Cuisine" />
 
       {/* Orders Tickets Grid */}

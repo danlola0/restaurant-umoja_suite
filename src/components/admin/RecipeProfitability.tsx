@@ -52,11 +52,14 @@ export const RecipeProfitability: React.FC = () => {
   });
   const profitability = products.map(product => {
     const sale = sales.get(product.id) || { quantity: 0, revenue: 0 };
+    const recipeLines = recipeIngredients.filter(item => item.productId === product.id);
+    const hasRecipe = recipeLines.length > 0;
     const portionCost = costPerPortion(product.id);
     const ingredientCost = portionCost * sale.quantity;
-    return { product, ...sale, portionCost, ingredientCost, grossProfit: sale.revenue - ingredientCost };
+    const costKnown = hasRecipe && portionCost > 0;
+    return { product, ...sale, portionCost, ingredientCost, grossProfit: sale.revenue - ingredientCost, hasRecipe, costKnown };
   }).filter(item => item.quantity > 0 || recipeIngredients.some(recipe => recipe.productId === item.product.id))
-    .sort((left, right) => right.grossProfit - left.grossProfit);
+    .sort((left, right) => right.revenue - left.revenue);
 
   const addNewIngredient = async (event: React.FormEvent) => {
     event.preventDefault();
@@ -83,11 +86,11 @@ export const RecipeProfitability: React.FC = () => {
     <div className="space-y-5">
       <div className="rounded-2xl border border-stone-800 bg-stone-900 p-5 shadow-xl">
         <div className="flex flex-col gap-3 border-b border-stone-800 pb-3 sm:flex-row sm:items-center sm:justify-between">
-          <div><h3 className="flex items-center gap-2 text-sm font-bold text-stone-100"><BarChart3 className="h-4 w-4 text-amber-400" /> Rentabilité des recettes</h3><p className="text-xs text-stone-400">Ventes réelles des commandes moins coût des ingrédients par portion.</p></div>
+          <div><h3 className="flex items-center gap-2 text-sm font-bold text-stone-100"><BarChart3 className="h-4 w-4 text-amber-400" /> Rentabilité des recettes</h3><p className="text-xs text-stone-400">Bénéfice = prix de vente − coût d’achat des ingrédients de la recette. Sans recette, le coût reste à 0 et le bénéfice n’est pas calculable.</p></div>
           <div className="flex flex-wrap gap-1 rounded-lg bg-stone-950 p-1">{([['TODAY', "Aujourd'hui"], ['WEEK', 'Cette semaine'], ['MONTH', 'Ce mois'], ['CUSTOM', 'Personnalisée']] as const).map(([value, label]) => <button key={value} onClick={() => setPeriod(value)} className={`rounded-md px-2.5 py-1.5 text-xs font-bold ${period === value ? 'bg-amber-500 text-stone-950' : 'text-stone-400 hover:text-stone-200'}`}>{label}</button>)}</div>
         </div>
         {period === 'CUSTOM' && <div className="mt-3 grid grid-cols-1 gap-3 sm:grid-cols-2"><input type="date" value={customStart} onChange={event => setCustomStart(event.target.value)} className="rounded-lg border border-stone-700 bg-stone-950 p-2 text-xs" /><input type="date" value={customEnd} onChange={event => setCustomEnd(event.target.value)} className="rounded-lg border border-stone-700 bg-stone-950 p-2 text-xs" /></div>}
-        <div className="mt-4 overflow-x-auto"><table className="w-full min-w-[720px] text-left text-xs"><thead className="border-b border-stone-800 text-[10px] uppercase text-stone-500"><tr><th className="p-3">Plat</th><th className="p-3 text-right">Portions</th><th className="p-3 text-right">Coût / portion</th><th className="p-3 text-right">Montant vendu</th><th className="p-3 text-right">Coût ingrédients</th><th className="p-3 text-right">Bénéfice brut</th></tr></thead><tbody className="divide-y divide-stone-800">{profitability.map(item => <tr key={item.product.id}><td className="p-3 font-bold text-stone-200">{item.product.name}</td><td className="p-3 text-right font-mono">{item.quantity}</td><td className="p-3 text-right font-mono">{formatFC(item.portionCost)}</td><td className="p-3 text-right font-mono text-emerald-400">{formatFC(item.revenue)}</td><td className="p-3 text-right font-mono text-rose-400">{formatFC(item.ingredientCost)}</td><td className={`p-3 text-right font-mono font-bold ${item.grossProfit >= 0 ? 'text-amber-400' : 'text-rose-400'}`}>{formatFC(item.grossProfit)}</td></tr>)}{profitability.length === 0 && <tr><td colSpan={6} className="p-6 text-center text-stone-500">Ajoutez les ingrédients d’une recette ou attendez les premières ventes enregistrées.</td></tr>}</tbody></table></div>
+        <div className="mt-4 overflow-x-auto"><table className="w-full min-w-[720px] text-left text-xs"><thead className="border-b border-stone-800 text-[10px] uppercase text-stone-500"><tr><th className="p-3">Plat</th><th className="p-3 text-right">Portions</th><th className="p-3 text-right">Coût / portion</th><th className="p-3 text-right">Montant vendu</th><th className="p-3 text-right">Coût ingrédients</th><th className="p-3 text-right">Bénéfice brut</th></tr></thead><tbody className="divide-y divide-stone-800">{profitability.map(item => <tr key={item.product.id}><td className="p-3 font-bold text-stone-200">{item.product.name}{!item.costKnown && <span className="mt-0.5 block text-[10px] font-medium text-amber-400/90">Recette ou coût d’achat manquant</span>}</td><td className="p-3 text-right font-mono">{item.quantity}</td><td className="p-3 text-right font-mono">{item.costKnown ? formatFC(item.portionCost) : '—'}</td><td className="p-3 text-right font-mono text-emerald-400">{formatFC(item.revenue)}</td><td className="p-3 text-right font-mono text-rose-400">{item.costKnown ? formatFC(item.ingredientCost) : '—'}</td><td className={`p-3 text-right font-mono font-bold ${!item.costKnown ? 'text-stone-500' : item.grossProfit >= 0 ? 'text-amber-400' : 'text-rose-400'}`}>{item.costKnown ? formatFC(item.grossProfit) : 'Non calculable'}</td></tr>)}{profitability.length === 0 && <tr><td colSpan={6} className="p-6 text-center text-stone-500">Ajoutez les ingrédients d’une recette ou attendez les premières ventes enregistrées.</td></tr>}</tbody></table></div>
       </div>
 
       <div className="grid grid-cols-1 gap-5 lg:grid-cols-2">

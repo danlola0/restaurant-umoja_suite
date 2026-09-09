@@ -141,7 +141,7 @@ export const AdminDashboard: React.FC = () => {
             {formatFC(totalExpenses)}
           </div>
           <div className="text-[11px] text-stone-400 mt-1">
-            {expenses.length} dépenses enregistrées
+            {expenses.length} enregistrements · un achat n’est pas une perte s’il reste en stock
           </div>
         </div>
 
@@ -156,7 +156,7 @@ export const AdminDashboard: React.FC = () => {
             {formatFC(netOperatingProfit)}
           </div>
           <div className="text-[11px] text-stone-400 mt-1">
-            {netOperatingProfit < 0 ? 'Perte' : netOperatingProfit === 0 ? 'Équilibre (0)' : 'Bénéfice'} : ventes payées − achats
+            Trésorerie : ventes payées − décaissements. La marge (coût consommé) est dans Dépenses / Clôture.
           </div>
         </div>
 

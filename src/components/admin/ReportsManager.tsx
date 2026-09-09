@@ -2,6 +2,8 @@ import React, { useState } from 'react';
 import { useRestaurant } from '../../context/RestaurantContext';
 import { formatFC, formatDateOnly, formatDateTime } from '../../utils/formatters';
 import { RecipeProfitability } from './RecipeProfitability';
+import { ExpenseManager } from './ExpenseManager';
+import { isPurchaseCategory } from '../../utils/expenseCatalog';
 import { 
   FileSpreadsheet, 
   Download, 
@@ -28,11 +30,12 @@ export const ReportsManager: React.FC = () => {
     currentUser
   } = useRestaurant();
 
-  const [activeReportTab, setActiveReportTab] = useState<'FINANCIER' | 'VENTES' | 'RH' | 'CAISSE' | 'RENTABILITE'>('FINANCIER');
+  const [activeReportTab, setActiveReportTab] = useState<'FINANCIER' | 'VENTES' | 'RH' | 'CAISSE' | 'RENTABILITE' | 'CLOTURE'>('FINANCIER');
 
   const totalRevenue = invoices.filter(i => i.status === 'PAYEE').reduce((sum, i) => sum + i.paidAmount, 0);
-  const totalExpenses = expenses.reduce((sum, e) => sum + e.amount, 0);
-  const netMargin = totalRevenue - totalExpenses;
+  const cashOutflow = expenses.reduce((sum, e) => sum + e.amount, 0);
+  const purchaseSpend = expenses.filter(e => isPurchaseCategory(e.category)).reduce((sum, e) => sum + e.amount, 0);
+  const operatingSpend = cashOutflow - purchaseSpend;
   const totalSalaries = employees.filter(e => e.statut === 'ACTIF').reduce((sum, e) => sum + (e.salaireBase || e.salaire || 0), 0);
 
   // Export to CSV (conservé)
@@ -82,8 +85,8 @@ export const ReportsManager: React.FC = () => {
     }
     if (dataType === 'expenses') {
       return {
-        headers: ['ID', 'Date', 'Categorie', 'Description', 'Fournisseur', 'Montant (CNY)', 'Mode', 'Enregistre Par'],
-        rows: expenses.map(exp => [exp.id, exp.date, exp.category, exp.description, exp.supplier || '-', exp.amount, exp.paymentMethod, exp.recordedBy]),
+        headers: ['ID', 'Date', 'Categorie', 'Produit', 'Quantite', 'Unite', 'Description', 'Fournisseur', 'Montant', 'Mode', 'Enregistre Par'],
+        rows: expenses.map(exp => [exp.id, exp.date, exp.category, exp.itemName || exp.description, exp.quantity || '', exp.unit || '', exp.description, exp.supplier || '-', exp.amount, exp.paymentMethod, exp.recordedBy]),
       };
     }
     return {
@@ -166,6 +169,7 @@ export const ReportsManager: React.FC = () => {
           { key: 'RH', label: 'Rapport RH & Masse Salariale', icon: Users },
           { key: 'CAISSE', label: 'Journal des Encaissements', icon: Layers },
           { key: 'RENTABILITE', label: 'Rentabilité des recettes', icon: TrendingUp },
+          { key: 'CLOTURE', label: 'Clôture journalière', icon: Calendar },
         ].map(tab => {
           const Icon = tab.icon;
           const isActive = activeReportTab === tab.key;
@@ -197,15 +201,15 @@ export const ReportsManager: React.FC = () => {
             </div>
 
             <div className="bg-stone-900 border border-stone-800 rounded-2xl p-4 shadow">
-              <span className="text-xs text-stone-400">Total Charges Décaissées</span>
-              <div className="text-2xl font-mono font-black text-rose-400 mt-1">{formatFC(totalExpenses)}</div>
-              <div className="text-[11px] text-stone-500 mt-1">{expenses.length} postes de dépense</div>
+              <span className="text-xs text-stone-400">Décaissements (achats + charges)</span>
+              <div className="text-2xl font-mono font-black text-rose-400 mt-1">{formatFC(cashOutflow)}</div>
+              <div className="text-[11px] text-stone-500 mt-1">Achats {formatFC(purchaseSpend)} · Charges {formatFC(operatingSpend)}</div>
             </div>
 
             <div className="bg-stone-900 border border-stone-800 rounded-2xl p-4 shadow">
-              <span className="text-xs text-stone-400">Bénéfice Net d'Exploitation</span>
-              <div className="text-2xl font-mono font-black text-amber-400 mt-1">{formatFC(netMargin)}</div>
-              <div className="text-[11px] text-stone-500 mt-1">Marge : {totalRevenue > 0 ? Math.round((netMargin / totalRevenue) * 100) : 0}%</div>
+              <span className="text-xs text-stone-400">Trésorerie (recettes − décaissements)</span>
+              <div className="text-2xl font-mono font-black text-amber-400 mt-1">{formatFC(totalRevenue - cashOutflow)}</div>
+              <div className="text-[11px] text-stone-500 mt-1">La marge réelle est dans Clôture (ventes − coût consommé − charges)</div>
             </div>
           </div>
 
@@ -327,6 +331,7 @@ export const ReportsManager: React.FC = () => {
       )}
 
       {activeReportTab === 'RENTABILITE' && <RecipeProfitability />}
+      {activeReportTab === 'CLOTURE' && <ExpenseManager />}
 
     </div>
   );

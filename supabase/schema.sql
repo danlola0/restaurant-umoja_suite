@@ -219,6 +219,20 @@ alter table public.expenses add column if not exists service text not null defau
   check (service in ('CUISINE', 'CAISSE', 'ADMINISTRATION'));
 alter table public.expenses add column if not exists item_name text;
 alter table public.expenses add column if not exists quantity numeric(12, 2) check (quantity is null or quantity > 0);
+alter table public.expenses add column if not exists unit text;
+
+create table if not exists public.kitchen_preparations (
+  id text primary key,
+  product_id text references public.products(id) on delete set null,
+  product_name text not null,
+  quantity numeric(12, 3) not null check (quantity > 0),
+  notes text,
+  recorded_by uuid references public.profiles(id) on delete set null,
+  prepared_at timestamptz not null default now()
+);
+
+alter table public.kitchen_preparations enable row level security;
+create index if not exists kitchen_preparations_prepared_at_idx on public.kitchen_preparations(prepared_at);
 
 do $$
 begin
@@ -416,7 +430,11 @@ drop policy if exists categories_admin_all on public.categories;
 drop policy if exists products_public_read on public.products;
 drop policy if exists products_admin_all on public.products;
 drop policy if exists ingredients_admin_all on public.ingredients;
+drop policy if exists ingredients_kitchen_read on public.ingredients;
 drop policy if exists recipe_ingredients_admin_all on public.recipe_ingredients;
+drop policy if exists recipe_ingredients_kitchen_read on public.recipe_ingredients;
+drop policy if exists kitchen_preparations_read on public.kitchen_preparations;
+drop policy if exists kitchen_preparations_insert on public.kitchen_preparations;
 drop policy if exists tables_authenticated_read on public.restaurant_tables;
 drop policy if exists tables_public_read on public.restaurant_tables;
 drop policy if exists tables_manager_all on public.restaurant_tables;
@@ -469,7 +487,16 @@ create policy products_public_read on public.products for select using (availabl
 create policy products_admin_all on public.products for all using (public.has_role(array['ADMINISTRATEUR', 'RESPONSABLE'])) with check (public.has_role(array['ADMINISTRATEUR', 'RESPONSABLE']));
 
 create policy ingredients_admin_all on public.ingredients for all using (public.has_role(array['ADMINISTRATEUR', 'RESPONSABLE'])) with check (public.has_role(array['ADMINISTRATEUR', 'RESPONSABLE']));
+create policy ingredients_kitchen_read on public.ingredients for select using (public.has_role(array['ADMINISTRATEUR', 'RESPONSABLE', 'CUISINE', 'CAISSIER']));
 create policy recipe_ingredients_admin_all on public.recipe_ingredients for all using (public.has_role(array['ADMINISTRATEUR', 'RESPONSABLE'])) with check (public.has_role(array['ADMINISTRATEUR', 'RESPONSABLE']));
+create policy recipe_ingredients_kitchen_read on public.recipe_ingredients for select using (public.has_role(array['ADMINISTRATEUR', 'RESPONSABLE', 'CUISINE', 'CAISSIER']));
+create policy kitchen_preparations_read on public.kitchen_preparations for select using (
+  public.has_role(array['ADMINISTRATEUR', 'RESPONSABLE', 'CUISINE', 'CAISSIER', 'SERVEUR'])
+);
+create policy kitchen_preparations_insert on public.kitchen_preparations for insert with check (
+  recorded_by = auth.uid()
+  and public.has_role(array['ADMINISTRATEUR', 'RESPONSABLE', 'CUISINE'])
+);
 
 create policy tables_public_read on public.restaurant_tables for select using (true);
 create policy tables_manager_all on public.restaurant_tables for all using (public.has_role(array['ADMINISTRATEUR', 'RESPONSABLE', 'CAISSIER', 'SERVEUR'])) with check (public.has_role(array['ADMINISTRATEUR', 'RESPONSABLE', 'CAISSIER', 'SERVEUR']));
@@ -519,7 +546,7 @@ create policy expenses_service_insert on public.expenses for insert with check (
 );
 create policy expenses_manager_write on public.expenses for update using (public.has_role(array['ADMINISTRATEUR', 'RESPONSABLE'])) with check (public.has_role(array['ADMINISTRATEUR', 'RESPONSABLE']));
 
-create policy expense_categories_manager_read on public.expense_categories for select using (public.has_role(array['ADMINISTRATEUR', 'RESPONSABLE', 'CAISSIER']));
+create policy expense_categories_manager_read on public.expense_categories for select using (public.has_role(array['ADMINISTRATEUR', 'RESPONSABLE', 'CAISSIER', 'CUISINE']));
 create policy expense_categories_admin_write on public.expense_categories for all using (public.has_role(array['ADMINISTRATEUR', 'RESPONSABLE'])) with check (public.has_role(array['ADMINISTRATEUR', 'RESPONSABLE']));
 
 create policy cash_register_sessions_staff_read on public.cash_register_sessions for select using (public.has_role(array['ADMINISTRATEUR', 'RESPONSABLE', 'CAISSIER']));

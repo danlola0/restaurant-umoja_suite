@@ -5,6 +5,7 @@ import { formatFC, formatDateTime, formatTimeOnly } from '../../utils/formatters
 import { InvoiceModal } from './InvoiceModal';
 import { PaymentModal } from './PaymentModal';
 import { ServiceExpensePanel } from '../common/ServiceExpensePanel';
+import { DailyResultStrip } from './DailyResultStrip';
 import { invoiceGuestLabel, invoiceLineItems, paymentMethodLabel } from '../../lib/cashierOrders';
 import { 
   CreditCard, 
@@ -198,6 +199,7 @@ export const CashierPosView: React.FC = () => {
 
       </div>
 
+      <DailyResultStrip />
       <ServiceExpensePanel service="CAISSE" title="Caisse" />
 
       <div className="flex items-center gap-2 bg-stone-900 border border-stone-800 rounded-2xl p-1.5 w-full sm:w-auto">
