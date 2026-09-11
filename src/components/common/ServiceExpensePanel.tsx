@@ -1,8 +1,8 @@
 import React, { useState } from 'react';
 import { useRestaurant } from '../../context/RestaurantContext';
 import { PaymentMethod } from '../../types';
-import { formatFC } from '../../utils/formatters';
-import { EXPENSE_CATEGORY_OPTIONS, OPERATING_PARENT, OPERATING_SUBCATEGORIES, PURCHASE_CATEGORIES, SALARY_CATEGORY, isPurchaseCategory } from '../../utils/expenseCatalog';
+import { formatFC, localCalendarDate } from '../../utils/formatters';
+import { EXPENSE_CATEGORY_OPTIONS, EXPENSE_UNITS, OPERATING_PARENT, OPERATING_SUBCATEGORIES, PURCHASE_CATEGORIES, SALARY_CATEGORY, isPurchaseCategory } from '../../utils/expenseCatalog';
 import { Plus, ReceiptText, X } from 'lucide-react';
 
 interface ServiceExpensePanelProps {
@@ -19,6 +19,8 @@ export const ServiceExpensePanel: React.FC<ServiceExpensePanelProps> = ({ servic
   const chargeNames = categoryOptions.filter(name => !isPurchaseCategory(name));
   const [category, setCategory] = useState(categoryOptions[0]);
   const [amount, setAmount] = useState(0);
+  const [quantity, setQuantity] = useState<number | ''>('');
+  const [unit, setUnit] = useState('kg');
   const [description, setDescription] = useState('');
   const [paymentMethod, setPaymentMethod] = useState<PaymentMethod>('ESPECES');
   const [isSubmitting, setIsSubmitting] = useState(false);
@@ -26,8 +28,9 @@ export const ServiceExpensePanel: React.FC<ServiceExpensePanelProps> = ({ servic
   const [isOpen, setIsOpen] = useState(false);
 
   const serviceExpenses = expenses.filter(expense => expense.service === service);
+  const todayKey = localCalendarDate();
   const totalToday = serviceExpenses
-    .filter(expense => expense.date === new Date().toISOString().slice(0, 10))
+    .filter(expense => expense.date === todayKey)
     .reduce((sum, expense) => sum + expense.amount, 0);
 
   const submitExpense = async (event: React.FormEvent) => {
@@ -36,11 +39,14 @@ export const ServiceExpensePanel: React.FC<ServiceExpensePanelProps> = ({ servic
     if (isPurchaseCategory(category) && !description.trim()) return;
     setError('');
     setIsSubmitting(true);
+    const qty = typeof quantity === 'number' && quantity > 0 ? quantity : undefined;
     const created = await recordExpense({
-      date: new Date().toISOString().slice(0, 10),
+      date: localCalendarDate(),
       service,
       category,
       itemName: isPurchaseCategory(category) ? description.trim() : undefined,
+      quantity: qty,
+      unit: qty ? unit : undefined,
       amount,
       description: description.trim() || category,
       paymentMethod,
@@ -52,6 +58,7 @@ export const ServiceExpensePanel: React.FC<ServiceExpensePanelProps> = ({ servic
       return;
     }
     setAmount(0);
+    setQuantity('');
     setDescription('');
     setIsOpen(false);
   };
@@ -103,8 +110,22 @@ export const ServiceExpensePanel: React.FC<ServiceExpensePanelProps> = ({ servic
               </div>
               <div>
                 <label className="mb-1 block text-[11px] font-bold text-stone-300">{isPurchaseCategory(category) ? 'Produit / motif *' : 'Motif (optionnel)'}</label>
-                <textarea required={isPurchaseCategory(category)} rows={2} value={description} onChange={event => setDescription(event.target.value)} placeholder={isPurchaseCategory(category) ? 'Ex: Huile 2 litres' : 'Ex: Taxi marché'} className="w-full rounded-lg border border-stone-700 bg-stone-950 p-2.5 text-xs text-stone-100" />
+                <textarea required={isPurchaseCategory(category)} rows={2} value={description} onChange={event => setDescription(event.target.value)} placeholder={isPurchaseCategory(category) ? 'Ex: Viande' : 'Ex: Taxi marché'} className="w-full rounded-lg border border-stone-700 bg-stone-950 p-2.5 text-xs text-stone-100" />
               </div>
+              {isPurchaseCategory(category) && (
+                <div className="grid grid-cols-2 gap-2">
+                  <div>
+                    <label className="mb-1 block text-[11px] font-bold text-stone-300">Quantité (stock)</label>
+                    <input type="number" min="0.01" step="0.01" value={quantity} onChange={event => setQuantity(event.target.value === '' ? '' : Number(event.target.value))} placeholder="Ex: 10" className="w-full rounded-lg border border-stone-700 bg-stone-950 p-2.5 text-xs font-mono text-stone-100" />
+                  </div>
+                  <div>
+                    <label className="mb-1 block text-[11px] font-bold text-stone-300">Unité</label>
+                    <select value={unit} onChange={event => setUnit(event.target.value)} className="w-full rounded-lg border border-stone-700 bg-stone-950 p-2.5 text-xs text-stone-100">
+                      {EXPENSE_UNITS.map(name => <option key={name} value={name}>{name}</option>)}
+                    </select>
+                  </div>
+                </div>
+              )}
               <div>
                 <label className="mb-1 block text-[11px] font-bold text-stone-300">Mode de paiement</label>
                 <select value={paymentMethod} onChange={event => setPaymentMethod(event.target.value as PaymentMethod)} className="w-full rounded-lg border border-stone-700 bg-stone-950 p-2.5 text-xs text-stone-100"><option value="ESPECES">Cash / 现金</option><option value="WECHAT">WeChat</option><option value="ALIPAY">Alipay</option><option value="CARTE">UnionPay / Card</option><option value="BANQUE">Bank</option></select>

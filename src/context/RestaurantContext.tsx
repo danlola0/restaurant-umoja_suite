@@ -41,7 +41,7 @@ import {
   initialInvoices,
   initialAuditLogs,
 } from '../data/seedData';
-import { playNotificationSound } from '../utils/formatters';
+import { isLocalCalendarDay, localCalendarDate, playNotificationSound } from '../utils/formatters';
 import { supabase } from '../lib/supabase';
 import { isPurchaseCategory } from '../utils/expenseCatalog';
 import { findIngredientByName } from '../utils/profitability';
@@ -217,7 +217,7 @@ const productToSupabase = (product: Product) => ({
 
 const expenseFromSupabase = (row: any): Expense => ({
   id: row.id,
-  date: row.expense_date,
+  date: String(row.expense_date || '').slice(0, 10),
   service: row.service || 'ADMINISTRATION',
   category: row.category,
   itemName: row.item_name || undefined,
@@ -231,6 +231,28 @@ const expenseFromSupabase = (row: any): Expense => ({
   recordedBy: row.recorded_by || 'Utilisateur autorisé',
   createdAt: row.created_at,
 });
+
+const expenseQuantityOrNull = (quantity?: number) =>
+  typeof quantity === 'number' && quantity > 0 ? quantity : null;
+
+const fetchAllExpenseRows = async (service?: 'CUISINE' | 'CAISSE' | 'ADMINISTRATION') => {
+  const pageSize = 1000;
+  const rows: any[] = [];
+  for (let from = 0; from < 50000; from += pageSize) {
+    let query = supabase
+      .from('expenses')
+      .select('*')
+      .order('expense_date', { ascending: false })
+      .order('created_at', { ascending: false })
+      .range(from, from + pageSize - 1);
+    if (service) query = query.eq('service', service);
+    const { data, error } = await query;
+    if (error) return { data: rows, error };
+    rows.push(...(data || []));
+    if (!data || data.length < pageSize) break;
+  }
+  return { data: rows, error: null };
+};
 
 const ingredientFromSupabase = (row: any): Ingredient => ({
   id: row.id,
@@ -541,7 +563,7 @@ export const RestaurantProvider: React.FC<{ children: React.ReactNode }> = ({ ch
       const [invoicesResult, paymentsResult, expensesResult, sessionsResult] = await Promise.all([
         supabase.from('invoices').select('*').order('created_at', { ascending: false }),
         supabase.from('payments').select('*').order('created_at', { ascending: false }),
-        supabase.from('expenses').select('*').order('expense_date', { ascending: false }),
+        fetchAllExpenseRows(),
         supabase.from('cash_register_sessions').select('*').order('opened_at', { ascending: false }).limit(1),
       ]);
       if (!mounted) return;
@@ -570,15 +592,20 @@ export const RestaurantProvider: React.FC<{ children: React.ReactNode }> = ({ ch
       setInvoices(invoicesFromDatabase);
       setPaymentTransactions(paymentsFromDatabase);
 
-      const today = new Date().toISOString().slice(0, 10);
-      const paymentsToday = paymentsFromDatabase.filter(payment => payment.createdAt.slice(0, 10) === today);
+      const today = localCalendarDate();
+      const paymentsToday = paymentsFromDatabase.filter(payment => isLocalCalendarDay(payment.createdAt, today));
       const salesFor = (methods: PaymentMethod[]) => paymentsToday.filter(payment => methods.includes(payment.paymentMethod)).reduce((sum, payment) => sum + payment.amount, 0);
       if (expensesResult.data) setExpenses(expensesResult.data.map(expenseFromSupabase));
-      const expensesToday = (expensesResult.data || []).filter((expense: any) => expense.expense_date === today && expense.payment_method === 'ESPECES').reduce((sum: number, expense: any) => sum + Number(expense.amount), 0);
+      const expensesToday = (expensesResult.data || []).filter((expense: any) => (expense.expense_date === today || isLocalCalendarDay(expense.created_at, today)) && expense.payment_method === 'ESPECES').reduce((sum: number, expense: any) => sum + Number(expense.amount), 0);
       const session = sessionsResult.data?.[0];
+      const cashSales = salesFor(['ESPECES']);
+      const mobileSales = salesFor(['WECHAT', 'ALIPAY', 'QR_CODE']);
+      const cardSales = salesFor(['CARTE']);
+      const bankSales = salesFor(['BANQUE']);
       if (session) {
-        const cashSales = salesFor(['ESPECES']);
-        setCashRegister({ id: session.id, date: session.opened_at.slice(0, 10), openedAt: session.opened_at, openingBalance: Number(session.opening_balance), openedBy: session.opened_by || 'Caissier', status: session.status, closedAt: session.closed_at || undefined, closedBy: session.closed_by || undefined, totalSalesCash: cashSales, totalSalesMobile: salesFor(['WECHAT', 'ALIPAY', 'QR_CODE']), totalSalesCard: salesFor(['CARTE']), totalSalesBank: salesFor(['BANQUE']), totalExpenses: expensesToday, theoreticalBalance: Number(session.opening_balance) + cashSales - expensesToday, realBalance: session.real_balance === null ? undefined : Number(session.real_balance), variance: session.variance === null ? undefined : Number(session.variance), varianceReason: session.variance_reason || undefined, notes: session.notes || undefined });
+        const sessionOpenedToday = isLocalCalendarDay(session.opened_at, today);
+        const opening = session.status === 'OPEN' && sessionOpenedToday ? Number(session.opening_balance) : (sessionOpenedToday ? Number(session.opening_balance) : 0);
+        setCashRegister({ id: session.id, date: today, openedAt: session.opened_at, openingBalance: Number(session.opening_balance), openedBy: session.opened_by || 'Caissier', status: session.status, closedAt: session.closed_at || undefined, closedBy: session.closed_by || undefined, totalSalesCash: cashSales, totalSalesMobile: mobileSales, totalSalesCard: cardSales, totalSalesBank: bankSales, totalExpenses: expensesToday, theoreticalBalance: opening + cashSales - (sessionOpenedToday ? expensesToday : 0), realBalance: session.real_balance === null ? undefined : Number(session.real_balance), variance: session.variance === null ? undefined : Number(session.variance), varianceReason: session.variance_reason || undefined, notes: session.notes || undefined });
       } else {
         setCashRegister({
           id: 'cash-register-not-opened',
@@ -587,12 +614,12 @@ export const RestaurantProvider: React.FC<{ children: React.ReactNode }> = ({ ch
           openingBalance: 0,
           openedBy: 'Non ouverte',
           status: 'CLOSED',
-          totalSalesCash: 0,
-          totalSalesMobile: 0,
-          totalSalesCard: 0,
-          totalSalesBank: 0,
-          totalExpenses: 0,
-          theoreticalBalance: 0,
+          totalSalesCash: cashSales,
+          totalSalesMobile: mobileSales,
+          totalSalesCard: cardSales,
+          totalSalesBank: bankSales,
+          totalExpenses: expensesToday,
+          theoreticalBalance: cashSales,
         });
       }
     };
@@ -953,7 +980,7 @@ export const RestaurantProvider: React.FC<{ children: React.ReactNode }> = ({ ch
         supabase.from('order_items').select('*'),
         supabase.from('employees').select('*').order('prenom'),
         supabase.from('attendance_records').select('*').order('created_at', { ascending: false }),
-        supabase.from('expenses').select('*').order('created_at', { ascending: false }),
+        fetchAllExpenseRows(),
         supabase.from('expense_categories').select('*').order('name'),
         supabase.from('invoices').select('*').order('created_at', { ascending: false }),
         supabase.from('payments').select('*').order('created_at', { ascending: false }),
@@ -1087,7 +1114,7 @@ export const RestaurantProvider: React.FC<{ children: React.ReactNode }> = ({ ch
     if (!authEmail || currentRole !== 'CUISINE') return;
     const loadKitchenExpenses = async () => {
       const [expensesResult, categoriesResult] = await Promise.all([
-        supabase.from('expenses').select('*').eq('service', 'CUISINE').order('created_at', { ascending: false }),
+        fetchAllExpenseRows('CUISINE'),
         supabase.from('expense_categories').select('*').order('name'),
       ]);
       if (!expensesResult.error && expensesResult.data) setExpenses(expensesResult.data.map(expenseFromSupabase));
@@ -1873,9 +1900,8 @@ export const RestaurantProvider: React.FC<{ children: React.ReactNode }> = ({ ch
 
   const stockBackfillDone = useRef(false);
   useEffect(() => {
-    if (!['ADMINISTRATEUR', 'RESPONSABLE'].includes(currentRole)) return;
+    if (!['ADMINISTRATEUR', 'RESPONSABLE', 'CUISINE', 'CAISSIER'].includes(currentRole)) return;
     if (stockBackfillDone.current) return;
-    if (ingredients.length === 0) return;
     const purchases = expenses.filter(expense => isPurchaseCategory(expense.category) && Number(expense.quantity) > 0);
     if (purchases.length === 0) return;
     const already = new Set(
@@ -2244,7 +2270,7 @@ export const RestaurantProvider: React.FC<{ children: React.ReactNode }> = ({ ch
       service: newExpense.service,
       category: newExpense.category,
       item_name: newExpense.itemName || null,
-      quantity: newExpense.quantity || null,
+      quantity: expenseQuantityOrNull(newExpense.quantity),
       unit: newExpense.unit || null,
       description: newExpense.description,
       amount: newExpense.amount,
@@ -2260,13 +2286,17 @@ export const RestaurantProvider: React.FC<{ children: React.ReactNode }> = ({ ch
       delete payload.unit;
       ({ error } = await supabase.from('expenses').insert(payload));
     }
+    if (error && /created_at/i.test(error.message)) {
+      delete payload.created_at;
+      ({ error } = await supabase.from('expenses').insert(payload));
+    }
     if (error) {
       addNotification(`Dépense non enregistrée dans Supabase : ${error.message}`, 'error');
       return false;
     }
     setExpenses(prev => [newExpense, ...prev]);
 
-    if (isPurchaseCategory(newExpense.category) && newExpense.quantity && newExpense.quantity > 0 && ['ADMINISTRATEUR', 'RESPONSABLE'].includes(currentRole)) {
+    if (isPurchaseCategory(newExpense.category) && newExpense.quantity && newExpense.quantity > 0) {
       const designation = (newExpense.itemName || newExpense.description).trim();
       const unitCost = newExpense.amount / newExpense.quantity;
       await applyStockMovement({
@@ -2353,9 +2383,24 @@ export const RestaurantProvider: React.FC<{ children: React.ReactNode }> = ({ ch
     const existing = expenses.find(expense => expense.id === id);
     if (!existing) return false;
     const updated = { ...existing, ...updates };
-    const { error } = await supabase.from('expenses').update({ category: updated.category, item_name: updated.itemName || null, quantity: updated.quantity || null, unit: updated.unit || null, description: updated.description, amount: updated.amount, payment_method: updated.paymentMethod, supplier: updated.supplier || null, reference: updated.reference || updated.unit || null, expense_date: updated.date, created_at: updated.createdAt }).eq('id', id);
+    const baseUpdate = { category: updated.category, item_name: updated.itemName || null, quantity: expenseQuantityOrNull(updated.quantity), unit: updated.unit || null, description: updated.description, amount: updated.amount, payment_method: updated.paymentMethod, supplier: updated.supplier || null, reference: updated.reference || updated.unit || null, expense_date: updated.date, created_at: updated.createdAt };
+    const { error } = await supabase.from('expenses').update(baseUpdate).eq('id', id);
     if (error && /unit/i.test(error.message)) {
-      const retry = await supabase.from('expenses').update({ category: updated.category, item_name: updated.itemName || null, quantity: updated.quantity || null, description: updated.description, amount: updated.amount, payment_method: updated.paymentMethod, supplier: updated.supplier || null, reference: updated.reference || updated.unit || null, expense_date: updated.date, created_at: updated.createdAt }).eq('id', id);
+      const { created_at, unit, ...withoutUnit } = baseUpdate;
+      const retry = await supabase.from('expenses').update({ ...withoutUnit, created_at }).eq('id', id);
+      if (retry.error && /created_at/i.test(retry.error.message)) {
+        const retryDate = await supabase.from('expenses').update(withoutUnit).eq('id', id);
+        if (retryDate.error) {
+          addNotification(`Dépense non modifiée dans Supabase : ${retryDate.error.message}`, 'error');
+          return false;
+        }
+      } else if (retry.error) {
+        addNotification(`Dépense non modifiée dans Supabase : ${retry.error.message}`, 'error');
+        return false;
+      }
+    } else if (error && /created_at/i.test(error.message)) {
+      const { created_at: _ignored, ...withoutCreatedAt } = baseUpdate;
+      const retry = await supabase.from('expenses').update(withoutCreatedAt).eq('id', id);
       if (retry.error) {
         addNotification(`Dépense non modifiée dans Supabase : ${retry.error.message}`, 'error');
         return false;

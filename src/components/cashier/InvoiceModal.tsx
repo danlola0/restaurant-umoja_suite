@@ -1,9 +1,9 @@
-import React, { useEffect, useState } from 'react';
+import React from 'react';
 import { useRestaurant } from '../../context/RestaurantContext';
 import { Invoice } from '../../types';
-import { ALIPAY_PAY_QR_SRC, invoiceGuestLabel, invoiceLineItems, WECHAT_PAY_QR_SRC } from '../../lib/cashierOrders';
+import { invoiceGuestLabel, invoiceLineItems } from '../../lib/cashierOrders';
 import { KinMarcheReceipt } from './KinMarcheReceipt';
-import { imageToThermalQrPng, RECEIPT_PRINT_CSS } from '../../utils/printReceipt';
+import { RECEIPT_PRINT_CSS } from '../../utils/printReceipt';
 import { X, Printer, Receipt, CreditCard } from 'lucide-react';
 import { formatFC } from '../../utils/formatters';
 
@@ -19,74 +19,23 @@ export const InvoiceModal: React.FC<InvoiceModalProps> = ({
   onProceedToPayment,
 }) => {
   const { restaurantInfo, orders } = useRestaurant();
-  const [wechatQrSrc, setWechatQrSrc] = useState(WECHAT_PAY_QR_SRC);
-  const [alipayQrSrc, setAlipayQrSrc] = useState(ALIPAY_PAY_QR_SRC);
-
-  useEffect(() => {
-    let cancelled = false;
-    const sharpen = async () => {
-      try {
-        const [wechat, alipay] = await Promise.all([
-          imageToThermalQrPng(WECHAT_PAY_QR_SRC),
-          imageToThermalQrPng(ALIPAY_PAY_QR_SRC),
-        ]);
-        if (!cancelled) {
-          setWechatQrSrc(wechat);
-          setAlipayQrSrc(alipay);
-        }
-      } catch {
-        /* keep original JPEG if canvas conversion fails */
-      }
-    };
-    void sharpen();
-    return () => { cancelled = true; };
-  }, []);
 
   if (!invoice) return null;
 
   const handlePrint = () => {
     const source = document.getElementById('umoja-print-receipt');
     if (!source) return;
-
-    const iframe = document.createElement('iframe');
-    iframe.setAttribute('title', 'Impression reçu Umoja');
-    iframe.style.cssText = 'position:fixed;right:0;bottom:0;width:0;height:0;border:0;';
-    document.body.appendChild(iframe);
-    const frameWindow = iframe.contentWindow;
-    const frameDocument = iframe.contentDocument;
-    if (!frameWindow || !frameDocument) {
-      iframe.remove();
+    const html = `<!DOCTYPE html><html><head><meta charset="utf-8"/><title>${invoice.invoiceNumber}</title><style>${RECEIPT_PRINT_CSS}</style></head><body>${source.outerHTML}</body></html>`;
+    const printWindow = window.open('', '_blank', 'width=720,height=900');
+    if (!printWindow) {
       window.print();
       return;
     }
-
-    frameDocument.open();
-    frameDocument.write(`<!DOCTYPE html><html><head><meta charset="utf-8"/><title>${invoice.invoiceNumber}</title><style>${RECEIPT_PRINT_CSS}</style></head><body>${source.outerHTML}</body></html>`);
-    frameDocument.close();
-
-    const printFrame = () => {
-      frameWindow.focus();
-      frameWindow.print();
-      window.setTimeout(() => iframe.remove(), 800);
-    };
-
-    const images = Array.from(frameDocument.images);
-    if (images.length === 0) {
-      printFrame();
-      return;
-    }
-    let remaining = images.length;
-    const markDone = () => {
-      remaining -= 1;
-      if (remaining <= 0) window.setTimeout(printFrame, 120);
-    };
-    images.forEach(image => {
-      if (image.complete && image.naturalWidth > 0) markDone();
-      else {
-        image.addEventListener('load', markDone, { once: true });
-        image.addEventListener('error', markDone, { once: true });
-      }
-    });
+    printWindow.document.open();
+    printWindow.document.write(html);
+    printWindow.document.close();
+    printWindow.focus();
+    printWindow.setTimeout(() => printWindow.print(), 200);
   };
 
   const isPaid = invoice.status === 'PAYEE';
@@ -128,8 +77,6 @@ export const InvoiceModal: React.FC<InvoiceModalProps> = ({
             restaurantInfo={restaurantInfo}
             items={items}
             guestLabel={guestLabel}
-            wechatQrSrc={wechatQrSrc}
-            alipayQrSrc={alipayQrSrc}
           />
         </div>
 

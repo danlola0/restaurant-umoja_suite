@@ -3,6 +3,17 @@ export const PURCHASE_CATEGORIES = [
   'Épices',
   'Légumes',
   'Divers',
+  'Viande de bœuf ou Ngombe',
+  'Tripe de bœuf ou Mabumu',
+  'Poisson',
+  'Poisson salé',
+  'Viande de porc ou mipanzi',
+  'Chèvre ou Ntaba',
+  'Poulet',
+  'Cuisse',
+  'Maïs',
+  'Boisson',
+  'Riz',
 ] as const;
 
 export const OPERATING_PARENT = 'Charges d’exploitation';
@@ -26,8 +37,7 @@ const PURCHASE_ALIASES = new Set<string>([
   ...PURCHASE_CATEGORIES,
   'Viande',
   'Épices et condiments',
-  'Poulet',
-  'Poisson',
+  'Viande de tripe ou Mabumu',
   'Riz / Semoule',
   'Huiles',
   'Boissons',

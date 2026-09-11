@@ -1,20 +1,60 @@
-import React, { useMemo, useRef, useState } from 'react';
+import React, { useMemo, useState } from 'react';
 import { useRestaurant } from '../../context/RestaurantContext';
 import { Expense } from '../../types';
-import { buildProfitSnapshot, periodRange, ReportPeriod } from '../../utils/profitability';
-import { formatFC, formatDateOnly, formatDateTime } from '../../utils/formatters';
+import { buildProfitSnapshot, calendarDateInRange, inRange, localDateTimeToIso, periodRange, ReportPeriod } from '../../utils/profitability';
+import { formatFC, formatExpenseOccurred } from '../../utils/formatters';
 import { EXPENSE_UNITS, NEW_CATEGORY_VALUE, OPERATING_PARENT, OPERATING_SUBCATEGORIES, PURCHASE_CATEGORIES, SALARY_CATEGORY, isPurchaseCategory, isSalaryCategory } from '../../utils/expenseCatalog';
-import { Plus, Edit3, Trash2, TrendingDown, TrendingUp, Printer, X, Download, CalendarClock } from 'lucide-react';
+import { Plus, Edit3, Trash2, TrendingDown, TrendingUp, Printer, X, Download } from 'lucide-react';
 
-const toLocalDateTimeInput = (value?: string) => {
+const pad2 = (n: number) => String(n).padStart(2, '0');
+
+const toLocalDateInput = (value?: string) => {
+  if (value && /^\d{4}-\d{2}-\d{2}$/.test(value.slice(0, 10)) && value.length <= 10) return value.slice(0, 10);
   const date = value ? new Date(value) : new Date();
-  if (Number.isNaN(date.getTime())) {
-    const now = new Date();
-    const pad = (n: number) => String(n).padStart(2, '0');
-    return `${now.getFullYear()}-${pad(now.getMonth() + 1)}-${pad(now.getDate())}T${pad(now.getHours())}:${pad(now.getMinutes())}`;
+  const source = Number.isNaN(date.getTime()) ? new Date() : date;
+  return `${source.getFullYear()}-${pad2(source.getMonth() + 1)}-${pad2(source.getDate())}`;
+};
+
+const toLocalTimeInput = (value?: string) => {
+  const date = value ? new Date(value) : new Date();
+  const source = Number.isNaN(date.getTime()) ? new Date() : date;
+  return `${pad2(source.getHours())}:${pad2(source.getMinutes())}`;
+};
+
+const isoDayToManual = (isoDay: string) => {
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(isoDay)) return isoDay;
+  const [year, month, day] = isoDay.split('-');
+  return `${day}/${month}/${year}`;
+};
+
+const parseManualDate = (raw: string): string | null => {
+  const value = raw.trim();
+  if (!value) return null;
+  if (/^\d{4}-\d{2}-\d{2}$/.test(value)) {
+    const [year, month, day] = value.split('-').map(Number);
+    const dt = new Date(year, month - 1, day);
+    return dt.getFullYear() === year && dt.getMonth() === month - 1 && dt.getDate() === day ? value : null;
   }
-  const pad = (n: number) => String(n).padStart(2, '0');
-  return `${date.getFullYear()}-${pad(date.getMonth() + 1)}-${pad(date.getDate())}T${pad(date.getHours())}:${pad(date.getMinutes())}`;
+  const match = value.match(/^(\d{1,2})[/\-.](\d{1,2})[/\-.](\d{4})$/);
+  if (!match) return null;
+  const day = Number(match[1]);
+  const month = Number(match[2]);
+  const year = Number(match[3]);
+  const dt = new Date(year, month - 1, day);
+  if (dt.getFullYear() !== year || dt.getMonth() !== month - 1 || dt.getDate() !== day) return null;
+  return `${year}-${pad2(month)}-${pad2(day)}`;
+};
+
+const parseManualTime = (raw: string): string => {
+  const value = raw.trim().toLowerCase().replace('h', ':');
+  if (!value) return '12:00';
+  const compact = value.match(/^(\d{1,2})(\d{2})$/);
+  const match = value.match(/^(\d{1,2}):(\d{2})$/) || (compact ? [compact[0], compact[1], compact[2]] : null);
+  if (!match) return '12:00';
+  const hours = Number(match[1]);
+  const minutes = Number(match[2]);
+  if (hours > 23 || minutes > 59) return '12:00';
+  return `${pad2(hours)}:${pad2(minutes)}`;
 };
 
 export const ExpenseManager: React.FC = () => {
@@ -27,27 +67,33 @@ export const ExpenseManager: React.FC = () => {
   const [operatingSub, setOperatingSub] = useState<string>(OPERATING_SUBCATEGORIES[0]);
   const [payingId, setPayingId] = useState('');
   const [itemName, setItemName] = useState('');
-  const [quantity, setQuantity] = useState<number>(0);
+  const [quantity, setQuantity] = useState<number | ''>('');
   const [unit, setUnit] = useState('kg');
-  const [unitPrice, setUnitPrice] = useState<number>(0);
+  const [unitPrice, setUnitPrice] = useState<number | ''>('');
   const [amount, setAmount] = useState<number>(0);
   const [supplier, setSupplier] = useState('');
   const [description, setDescription] = useState('');
-  const [expenseDateTime, setExpenseDateTime] = useState(toLocalDateTimeInput());
-  const [period, setPeriod] = useState<ReportPeriod>('TODAY');
+  const [expenseDate, setExpenseDate] = useState(isoDayToManual(toLocalDateInput()));
+  const [expenseTime, setExpenseTime] = useState(toLocalTimeInput());
+  const [dateError, setDateError] = useState('');
+  const [period, setPeriod] = useState<ReportPeriod | 'ALL'>('ALL');
   const [customStart, setCustomStart] = useState('');
   const [customEnd, setCustomEnd] = useState('');
   const [activeCategory, setActiveCategory] = useState<string>('ALL');
-  const dateTimeInputRef = useRef<HTMLInputElement>(null);
 
-  const range = periodRange(period, customStart, customEnd);
+  const range = period === 'ALL' ? { start: new Date(0), end: new Date() } : periodRange(period, customStart, customEnd);
   const snapshot = useMemo(
     () => buildProfitSnapshot({ invoices, expenses, orders, products, categories, ingredients, recipes: recipeIngredients, preparations: kitchenPreparations, range }),
     [invoices, expenses, orders, products, categories, ingredients, recipeIngredients, kitchenPreparations, period, customStart, customEnd]
   );
 
-  const sortedExpenses = [...snapshot.periodExpenses].sort((a, b) => b.date.localeCompare(a.date) || b.createdAt.localeCompare(a.createdAt));
+  const periodExpenses = period === 'ALL'
+    ? expenses
+    : expenses.filter(expense => calendarDateInRange(expense.date, range) || (!expense.date && inRange(expense.createdAt, range)));
+  const sortedExpenses = [...periodExpenses].sort((a, b) => (b.date || '').localeCompare(a.date || '') || (b.createdAt || '').localeCompare(a.createdAt || ''));
   const visibleExpenses = activeCategory === 'ALL' ? sortedExpenses : sortedExpenses.filter(expense => expense.category === activeCategory);
+  const displayedAmountTotal = visibleExpenses.reduce((sum, expense) => sum + Number(expense.amount || 0), 0);
+  const displayedQuantityTotal = visibleExpenses.reduce((sum, expense) => sum + Number(expense.quantity || 0), 0);
   const groupedTotals = Array.from(
     sortedExpenses.reduce((map, expense) => {
       map.set(expense.category, (map.get(expense.category) || 0) + expense.amount);
@@ -59,7 +105,7 @@ export const ExpenseManager: React.FC = () => {
   const exportExcel = () => {
     const headers = ['Date', 'Categorie', 'Produit', 'Quantite', 'Unite', 'Montant', 'Fournisseur', 'Description'];
     const rows = visibleExpenses.map(expense => [
-      formatDateTime(expense.createdAt) !== '-' ? formatDateTime(expense.createdAt) : formatDateOnly(expense.date),
+      formatExpenseOccurred(expense.date, expense.createdAt),
       expense.category,
       expense.itemName || expense.description,
       expense.quantity || '',
@@ -68,6 +114,7 @@ export const ExpenseManager: React.FC = () => {
       expense.supplier || '',
       expense.description,
     ]);
+    rows.push(['TOTAL', '', '', displayedQuantityTotal || '', '', displayedAmountTotal, '', '']);
     const stockHeaders = ['Ingredient', 'Achete', 'Consomme', 'Reste', 'Unite', 'Cout unitaire'];
     const stockRows = snapshot.stockRows.map(row => [row.name, row.purchased, row.consumed, row.remaining, row.unit, row.unitCost]);
     const summary = [
@@ -100,13 +147,15 @@ export const ExpenseManager: React.FC = () => {
     setCustomCategory('');
     setOperatingSub(OPERATING_SUBCATEGORIES[0]);
     setItemName('');
-    setQuantity(0);
+    setQuantity('');
     setUnit('kg');
-    setUnitPrice(0);
+    setUnitPrice('');
     setAmount(0);
     setSupplier('');
     setDescription('');
-    setExpenseDateTime(toLocalDateTimeInput());
+    setExpenseDate(isoDayToManual(toLocalDateInput()));
+    setExpenseTime(toLocalTimeInput());
+    setDateError('');
     setIsModalOpen(true);
   };
 
@@ -114,20 +163,24 @@ export const ExpenseManager: React.FC = () => {
     setEditingExpense(expense);
     setCategory(expense.category);
     setItemName(expense.itemName || expense.description);
-    setQuantity(expense.quantity || 0);
+    setQuantity(expense.quantity && expense.quantity > 0 ? expense.quantity : '');
     setUnit(expense.unit || 'kg');
-    setUnitPrice(expense.quantity ? expense.amount / expense.quantity : expense.amount);
+    setUnitPrice(expense.quantity && expense.quantity > 0 ? expense.amount / expense.quantity : '');
     setAmount(expense.amount);
     setSupplier(expense.supplier || '');
     setDescription(expense.description);
-    setExpenseDateTime(toLocalDateTimeInput(expense.createdAt || `${expense.date}T12:00`));
+    setExpenseDate(isoDayToManual(toLocalDateInput(expense.date)));
+    setExpenseTime(toLocalTimeInput(expense.createdAt || `${expense.date}T12:00`));
+    setDateError('');
     setIsModalOpen(true);
   };
 
-  const handleQtyOrPrice = (nextQty: number, nextPrice: number) => {
+  const handleQtyOrPrice = (nextQty: number | '', nextPrice: number | '') => {
     setQuantity(nextQty);
     setUnitPrice(nextPrice);
-    if (nextQty > 0 && nextPrice > 0) setAmount(Number((nextQty * nextPrice).toFixed(2)));
+    if (typeof nextQty === 'number' && nextQty > 0 && typeof nextPrice === 'number' && nextPrice > 0) {
+      setAmount(Number((nextQty * nextPrice).toFixed(2)));
+    }
   };
 
   const handleSubmit = async (e: React.FormEvent) => {
@@ -146,15 +199,20 @@ export const ExpenseManager: React.FC = () => {
     if (amount <= 0) return;
     if (isPurchase && !itemName.trim()) return;
     const recordedBy = currentUser ? `${currentUser.prenom} ${currentUser.nom}` : 'Gestionnaire Umoja';
-    const occurredAt = expenseDateTime ? new Date(expenseDateTime) : new Date();
-    const occurredIso = Number.isNaN(occurredAt.getTime()) ? new Date().toISOString() : occurredAt.toISOString();
+    const occurredDate = parseManualDate(expenseDate);
+    if (!occurredDate) {
+      setDateError('Saisissez la date à la main (ex. 11/09/2026).');
+      return;
+    }
+    setDateError('');
+    const occurredTime = parseManualTime(expenseTime);
     const expenseData = {
-      date: expenseDateTime.slice(0, 10),
-      createdAt: occurredIso,
+      date: occurredDate,
+      createdAt: localDateTimeToIso(occurredDate, occurredTime),
       service: 'ADMINISTRATION' as const,
       category: resolvedCategory,
       itemName: isPurchase ? designation : undefined,
-      quantity: isPurchase && quantity > 0 ? quantity : undefined,
+      quantity: typeof quantity === 'number' && quantity > 0 ? quantity : undefined,
       unit: isPurchase ? unit : undefined,
       amount,
       description: description.trim() || designation,
@@ -172,7 +230,7 @@ export const ExpenseManager: React.FC = () => {
     if (!reportWindow) return;
     const rows = visibleExpenses.map(expense => `
       <tr>
-        <td>${formatDateTime(expense.createdAt) !== '-' ? formatDateTime(expense.createdAt) : formatDateOnly(expense.date)}</td>
+        <td>${formatExpenseOccurred(expense.date, expense.createdAt)}</td>
         <td>${expense.category}</td>
         <td>${expense.itemName || expense.description}</td>
         <td>${expense.quantity || '—'} ${expense.unit || ''}</td>
@@ -185,7 +243,7 @@ export const ExpenseManager: React.FC = () => {
         <p>Clôture : ventes − coût des ingrédients consommés − charges. Un achat n’est pas une perte s’il reste du stock.</p>
         <p>Ventes ${formatFC(snapshot.sales)} · Achats ${formatFC(snapshot.purchaseSpend)} · Consommation ${formatFC(snapshot.cogs)} · Charges ${formatFC(snapshot.operatingSpend)} · Marge brute ${formatFC(snapshot.grossMargin)} · Résultat ${formatFC(snapshot.estimatedResult)}</p>
         <h2>Dépenses</h2>
-        <table><thead><tr><th>Date</th><th>Catégorie</th><th>Produit</th><th>Quantité</th><th>Montant</th></tr></thead><tbody>${rows}</tbody></table>
+        <table><thead><tr><th>Date</th><th>Catégorie</th><th>Produit</th><th>Quantité</th><th>Montant</th></tr></thead><tbody>${rows}<tr><td colspan="3"><strong>Total</strong></td><td><strong>${displayedQuantityTotal || '—'}</strong></td><td style="text-align:right"><strong>${formatFC(displayedAmountTotal)}</strong></td></tr></tbody></table>
         <h2>Stock estimé</h2>
         <table><thead><tr><th>Ingrédient</th><th>Acheté</th><th>Consommé</th><th>Reste</th></tr></thead><tbody>${stockRows || '<tr><td colspan="4">Aucun mouvement</td></tr>'}</tbody></table>
       </body></html>`);
@@ -215,7 +273,7 @@ export const ExpenseManager: React.FC = () => {
       </div>
 
       <div className="flex flex-wrap gap-1.5">
-        {([['TODAY', 'Quotidien'], ['WEEK', 'Hebdomadaire'], ['MONTH', 'Mensuel'], ['CUSTOM', 'Période']] as const).map(([value, label]) => (
+        {([['ALL', 'Toutes'], ['TODAY', 'Quotidien'], ['WEEK', 'Hebdomadaire'], ['MONTH', 'Mensuel'], ['CUSTOM', 'Période']] as const).map(([value, label]) => (
           <button key={value} onClick={() => setPeriod(value)} className={`rounded-full px-3 py-1.5 text-xs font-bold ${period === value ? 'bg-amber-500 text-stone-950' : 'bg-stone-900 text-stone-400'}`}>{label}</button>
         ))}
       </div>
@@ -270,7 +328,7 @@ export const ExpenseManager: React.FC = () => {
             <tbody className="divide-y divide-stone-800/80">
               {visibleExpenses.map(exp => (
                 <tr key={exp.id} className="hover:bg-stone-800/40">
-                  <td className="py-3 px-4 text-stone-400">{formatDateTime(exp.createdAt) !== '-' ? formatDateTime(exp.createdAt) : formatDateOnly(exp.date)}</td>
+                  <td className="py-3 px-4 text-stone-400">{formatExpenseOccurred(exp.date, exp.createdAt)}</td>
                   <td className="py-3 px-4">{exp.category}</td>
                   <td className="py-3 px-4 font-semibold text-stone-100">{exp.itemName || exp.description}</td>
                   <td className="py-3 px-4">{exp.quantity ? `${exp.quantity} ${exp.unit || ''}` : '—'}</td>
@@ -281,6 +339,14 @@ export const ExpenseManager: React.FC = () => {
                   </td>
                 </tr>
               ))}
+              {visibleExpenses.length > 0 && (
+                <tr className="bg-stone-950 font-bold text-stone-100">
+                  <td className="py-3 px-4" colSpan={3}>Total ({visibleExpenses.length} ligne{visibleExpenses.length > 1 ? 's' : ''})</td>
+                  <td className="py-3 px-4 font-mono">{displayedQuantityTotal > 0 ? displayedQuantityTotal : '—'}</td>
+                  <td className="py-3 px-4 font-mono font-black text-rose-400">{formatFC(displayedAmountTotal)}</td>
+                  <td className="py-3 px-4" />
+                </tr>
+              )}
             </tbody>
           </table>
           {visibleExpenses.length === 0 && <p className="py-10 text-center text-sm text-stone-500">Aucune dépense sur cette période.</p>}
@@ -303,8 +369,8 @@ export const ExpenseManager: React.FC = () => {
                     const next = e.target.value;
                     setCategory(next);
                     if (!isPurchaseCategory(next === OPERATING_PARENT ? operatingSub : next)) {
-                      setQuantity(0);
-                      setUnitPrice(0);
+                      setQuantity('');
+                      setUnitPrice('');
                       if (next !== 'Viandes') setItemName('');
                     }
                   }}
@@ -322,31 +388,30 @@ export const ExpenseManager: React.FC = () => {
                 </select>
               </div>
               <div>
-                <label className="mb-1 block text-xs font-bold text-stone-300">Date et heure *</label>
-                <div className="relative">
+                <label className="mb-1 block text-xs font-bold text-stone-300">Date (saisie manuelle) *</label>
+                <div className="grid grid-cols-2 gap-2">
                   <input
-                    ref={dateTimeInputRef}
                     required
-                    type="datetime-local"
-                    step="60"
-                    value={expenseDateTime}
-                    onChange={e => setExpenseDateTime(e.target.value)}
-                    className="umoja-datetime relative w-full rounded-lg border border-stone-700 bg-stone-950 p-2.5 pr-12 text-sm text-stone-100"
+                    type="text"
+                    inputMode="numeric"
+                    autoComplete="off"
+                    placeholder="JJ/MM/AAAA"
+                    value={expenseDate}
+                    onChange={e => { setExpenseDate(e.target.value); setDateError(''); }}
+                    className="w-full rounded-lg border border-stone-700 bg-white p-2.5 text-sm text-stone-900"
                   />
-                  <button
-                    type="button"
-                    aria-label="Choisir la date et l’heure"
-                    onClick={() => {
-                      const input = dateTimeInputRef.current;
-                      if (!input) return;
-                      if (typeof input.showPicker === 'function') input.showPicker();
-                      else input.focus();
-                    }}
-                    className="absolute right-1.5 top-1/2 z-10 flex h-8 w-8 -translate-y-1/2 items-center justify-center rounded-md bg-amber-400 text-stone-950 shadow-sm hover:bg-amber-300"
-                  >
-                    <CalendarClock className="h-4 w-4" />
-                  </button>
+                  <input
+                    type="text"
+                    inputMode="numeric"
+                    autoComplete="off"
+                    placeholder="HH:MM (optionnel)"
+                    value={expenseTime}
+                    onChange={e => setExpenseTime(e.target.value)}
+                    className="w-full rounded-lg border border-stone-700 bg-white p-2.5 text-sm text-stone-900"
+                  />
                 </div>
+                <p className="mt-1 text-[11px] text-stone-500">Tapez la date, par exemple 11/09/2026. L’heure est facultative (ex. 14:30).</p>
+                {dateError && <p className="mt-1 text-[11px] text-rose-400">{dateError}</p>}
               </div>
               {category === NEW_CATEGORY_VALUE && (
                 <div>
@@ -364,9 +429,9 @@ export const ExpenseManager: React.FC = () => {
               )}
               {isSalaryCategory(category) ? (
                 <div className="space-y-2">
-                  <p className="text-[11px] text-stone-400">Personnel RH — période {expenseDateTime.slice(0, 7)}. Un second paiement le même mois demande confirmation.</p>
+                  <p className="text-[11px] text-stone-400">Personnel RH — période {(parseManualDate(expenseDate) || '').slice(0, 7) || 'AAAA-MM'}. Un second paiement le même mois demande confirmation.</p>
                   {employees.filter(emp => emp.statut === 'ACTIF').map(employee => {
-                    const period = expenseDateTime.slice(0, 7);
+                    const period = (parseManualDate(expenseDate) || '').slice(0, 7);
                     const paid = salaryPayments.find(item => item.employeeId === employee.id && item.periodMonth === period && item.status === 'PAYE');
                     return (
                       <div key={employee.id} className="flex items-center justify-between gap-2 rounded-xl border border-stone-800 bg-stone-950 p-3">
@@ -382,7 +447,12 @@ export const ExpenseManager: React.FC = () => {
                             const duplicate = Boolean(paid);
                             if (duplicate && !window.confirm(`Salaire déjà payé pour ${period}. Payer à nouveau ?`)) return;
                             setPayingId(employee.id);
-                            await payEmployeeSalary(employee.id, period, duplicate, expenseDateTime);
+                            const salaryDate = parseManualDate(expenseDate);
+                            if (!salaryDate) {
+                              setDateError('Saisissez d’abord une date valide (ex. 11/09/2026).');
+                              return;
+                            }
+                            await payEmployeeSalary(employee.id, period, duplicate, `${salaryDate}T${parseManualTime(expenseTime)}`);
                             setPayingId('');
                           }}
                           className="rounded-lg bg-amber-500 px-3 py-1.5 text-[11px] font-bold text-stone-950 disabled:opacity-50"
@@ -402,8 +472,16 @@ export const ExpenseManager: React.FC = () => {
                   </div>
                   <div className="grid grid-cols-2 gap-3">
                     <div>
-                      <label className="mb-1 block text-xs font-bold text-stone-300">Quantité (entrée stock)</label>
-                      <input type="number" min="0" step="0.01" value={quantity || ''} onChange={e => handleQtyOrPrice(Number(e.target.value) || 0, unitPrice)} className="w-full rounded-lg border border-stone-700 bg-stone-950 p-2.5 text-sm font-mono" />
+                      <label className="mb-1 block text-xs font-bold text-stone-300">Quantité (optionnel)</label>
+                      <input type="number" min="0.01" step="0.01" value={quantity === '' ? '' : quantity} onChange={e => {
+                        const raw = e.target.value;
+                        if (raw === '') {
+                          handleQtyOrPrice('', unitPrice);
+                          return;
+                        }
+                        const next = Number(raw);
+                        handleQtyOrPrice(Number.isFinite(next) && next > 0 ? next : '', unitPrice);
+                      }} className="w-full rounded-lg border border-stone-700 bg-stone-950 p-2.5 text-sm font-mono" />
                     </div>
                     <div>
                       <label className="mb-1 block text-xs font-bold text-stone-300">Unité</label>
@@ -415,7 +493,14 @@ export const ExpenseManager: React.FC = () => {
                   <div className="grid grid-cols-2 gap-3">
                     <div>
                       <label className="mb-1 block text-xs font-bold text-stone-300">Prix d’achat unitaire</label>
-                      <input type="number" min="0" step="0.01" value={unitPrice || ''} onChange={e => handleQtyOrPrice(quantity, Number(e.target.value) || 0)} className="w-full rounded-lg border border-stone-700 bg-stone-950 p-2.5 text-sm font-mono" />
+                      <input type="number" min="0" step="0.01" value={unitPrice === '' ? '' : unitPrice} onChange={e => {
+                        const raw = e.target.value;
+                        if (raw === '') {
+                          handleQtyOrPrice(quantity, '');
+                          return;
+                        }
+                        handleQtyOrPrice(quantity, Number(e.target.value) || 0);
+                      }} className="w-full rounded-lg border border-stone-700 bg-stone-950 p-2.5 text-sm font-mono" />
                     </div>
                     <div>
                       <label className="mb-1 block text-xs font-bold text-stone-300">Montant total *</label>

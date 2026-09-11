@@ -4,6 +4,7 @@ import { Order, OrderStatus } from '../../types';
 import { formatTimeOnly, playNotificationSound } from '../../utils/formatters';
 import { ServiceExpensePanel } from '../common/ServiceExpensePanel';
 import { KitchenPrepPanel } from './KitchenPrepPanel';
+import { KitchenProductionReport } from './KitchenProductionReport';
 import { KitchenStockPanel } from './KitchenStockPanel';
 import { 
   ChefHat, 
@@ -191,6 +192,7 @@ export const KitchenKdsView: React.FC = () => {
       </div>
 
       <KitchenPrepPanel />
+      <KitchenProductionReport />
       <KitchenStockPanel />
       <ServiceExpensePanel service="CUISINE" title="Cuisine" />
 

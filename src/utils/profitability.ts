@@ -1,4 +1,4 @@
-import { Expense, Ingredient, Invoice, KitchenPreparation, Order, Product, RecipeIngredient } from '../types';
+import { Expense, Ingredient, Invoice, KitchenPreparation, Order, Product, RecipeIngredient, StockMovement } from '../types';
 import { isPurchaseCategory, normalizeItemName } from './expenseCatalog';
 
 export type ReportPeriod = 'TODAY' | 'WEEK' | 'MONTH' | 'CUSTOM';
@@ -20,7 +20,58 @@ export function periodRange(period: ReportPeriod, customStart = '', customEnd = 
 
 export function inRange(isoDate: string, range: PeriodRange): boolean {
   const time = new Date(isoDate).getTime();
+  if (Number.isNaN(time)) return false;
   return time >= range.start.getTime() && time <= range.end.getTime();
+}
+
+/** Compare YYYY-MM-DD in local calendar days (avoids UTC shifting date-only strings). */
+export function calendarDateInRange(dateStr: string | undefined, range: PeriodRange): boolean {
+  if (!dateStr) return false;
+  const day = String(dateStr).slice(0, 10);
+  const parts = day.split('-').map(Number);
+  if (parts.length < 3 || parts.some(n => Number.isNaN(n))) return inRange(dateStr, range);
+  const [year, month, dayNum] = parts;
+  const time = new Date(year, month - 1, dayNum).setHours(0, 0, 0, 0);
+  const start = new Date(range.start);
+  start.setHours(0, 0, 0, 0);
+  const end = new Date(range.end);
+  end.setHours(23, 59, 59, 999);
+  return time >= start.getTime() && time <= end.getTime();
+}
+
+export function localDateTimeToIso(dateStr: string, timeStr: string): string {
+  const [year, month, dayNum] = dateStr.slice(0, 10).split('-').map(Number);
+  const [hours, minutes] = (timeStr || '12:00').split(':').map(Number);
+  if (!year || !month || !dayNum) return new Date().toISOString();
+  return new Date(year, month - 1, dayNum, hours || 0, minutes || 0, 0, 0).toISOString();
+}
+
+export function paidProductSales(invoices: Invoice[], orders: Order[], range: PeriodRange) {
+  const map = new Map<string, { productName: string; quantity: number; revenue: number }>();
+  const add = (productId: string, productName: string, quantity: number, revenue: number) => {
+    const key = productId || productName;
+    const existing = map.get(key) || { productName, quantity: 0, revenue: 0 };
+    existing.quantity += quantity;
+    existing.revenue += revenue;
+    if (productName) existing.productName = productName;
+    map.set(key, existing);
+  };
+  const countedOrderIds = new Set<string>();
+  invoices
+    .filter(invoice => invoice.status === 'PAYEE' && inRange(invoice.paidAt || invoice.createdAt, range))
+    .forEach(invoice => {
+      (invoice.orderIds || []).forEach(id => countedOrderIds.add(id));
+      const related = orders.filter(order => (invoice.orderIds || []).includes(order.id));
+      related.forEach(order => {
+        order.items.forEach(item => add(item.productId, item.productName, item.quantity, item.subtotal));
+      });
+    });
+  orders
+    .filter(order => order.status === 'PAYEE' && !countedOrderIds.has(order.id) && inRange(order.servedAt || order.createdAt, range))
+    .forEach(order => {
+      order.items.forEach(item => add(item.productId, item.productName, item.quantity, item.subtotal));
+    });
+  return map;
 }
 
 export function findIngredientByName(name: string, ingredients: Ingredient[]): Ingredient | undefined {
@@ -88,7 +139,7 @@ export function buildProfitSnapshot(input: {
   const range = input.range;
   const stockRange = input.stockRange || { start: new Date(0), end: range.end };
   const sales = paidSalesTotal(input.invoices, range);
-  const periodExpenses = input.expenses.filter(expense => inRange(expense.date, range) || inRange(expense.createdAt, range));
+  const periodExpenses = input.expenses.filter(expense => calendarDateInRange(expense.date, range) || (!expense.date && inRange(expense.createdAt, range)));
   const purchaseSpend = periodExpenses.filter(expense => isPurchaseCategory(expense.category)).reduce((sum, expense) => sum + Number(expense.amount || 0), 0);
   const operatingSpend = periodExpenses.filter(expense => !isPurchaseCategory(expense.category)).reduce((sum, expense) => sum + Number(expense.amount || 0), 0);
   const totalExpenses = periodExpenses.reduce((sum, expense) => sum + Number(expense.amount || 0), 0);
@@ -106,7 +157,7 @@ export function buildProfitSnapshot(input: {
   const stockRows = input.ingredients.map(ingredient => {
     const purchased = input.expenses
       .filter(expense => isPurchaseCategory(expense.category) && expense.quantity && findIngredientByName(expense.itemName || expense.description, [ingredient]))
-      .filter(expense => inRange(expense.date, stockRange) || inRange(expense.createdAt, stockRange))
+      .filter(expense => calendarDateInRange(expense.date, stockRange))
       .reduce((sum, expense) => sum + Number(expense.quantity || 0), 0);
     const consumedFromPrep = input.preparations
       .filter(prep => inRange(prep.preparedAt, stockRange))
@@ -146,4 +197,64 @@ export function buildProfitSnapshot(input: {
     stockRows,
     periodExpenses,
   };
+}
+
+export function servedProductSales(orders: Order[], range: PeriodRange) {
+  const map = new Map<string, { productName: string; quantity: number }>();
+  orders
+    .filter(order => ['SERVIE', 'PAYEE'].includes(order.status) && inRange(order.servedAt || order.createdAt, range))
+    .forEach(order => {
+      order.items.forEach(item => {
+        const key = item.productId || item.productName;
+        const existing = map.get(key) || { productName: item.productName, quantity: 0 };
+        existing.quantity += item.quantity;
+        map.set(key, existing);
+      });
+    });
+  return map;
+}
+
+export function preparedProductSales(preparations: KitchenPreparation[], range: PeriodRange) {
+  const map = new Map<string, { productName: string; quantity: number }>();
+  preparations.filter(prep => inRange(prep.preparedAt, range)).forEach(prep => {
+    const key = prep.productId || prep.productName;
+    const existing = map.get(key) || { productName: prep.productName, quantity: 0 };
+    existing.quantity += Number(prep.quantity || 0);
+    map.set(key, existing);
+  });
+  return map;
+}
+
+export function ingredientPeriodFlow(ingredients: Ingredient[], movements: StockMovement[], expenses: Expense[], range: PeriodRange, options?: { resetCycle?: boolean }) {
+  return ingredients.map(ingredient => {
+    const periodMoves = movements.filter(movement => movement.ingredientId === ingredient.id && inRange(movement.createdAt, range));
+    const entries = periodMoves.filter(movement => movement.movementType === 'ENTREE').reduce((sum, movement) => sum + Number(movement.quantity || 0), 0);
+    const exits = periodMoves.filter(movement => movement.movementType === 'SORTIE').reduce((sum, movement) => sum + Number(movement.quantity || 0), 0);
+    const purchased = expenses
+      .filter(expense => isPurchaseCategory(expense.category) && expense.quantity && findIngredientByName(expense.itemName || expense.description, [ingredient]) && calendarDateInRange(expense.date, range))
+      .reduce((sum, expense) => sum + Number(expense.quantity || 0), 0);
+    const liveQty = Number(ingredient.stockQty || 0);
+    const remaining = options?.resetCycle ? Math.max(0, (entries || purchased) - exits) : liveQty;
+    const hasLedger = periodMoves.length > 0;
+    const initial = options?.resetCycle ? 0 : (hasLedger ? liveQty - entries + exits : liveQty);
+    const theoreticalRemaining = initial + (entries || purchased) - exits;
+    const variance = options?.resetCycle ? 0 : remaining - theoreticalRemaining;
+    return {
+      id: ingredient.id,
+      name: ingredient.name,
+      unit: ingredient.unit,
+      unitCost: Number(ingredient.unitCost || 0),
+      initial,
+      purchased: entries || purchased,
+      consumed: exits,
+      remaining,
+      remainingValue: remaining * Number(ingredient.unitCost || 0),
+      hasLedger,
+      theoreticalRemaining,
+      variance,
+    };
+  }).filter(row => {
+    if (options?.resetCycle) return row.purchased > 0 || row.consumed > 0 || row.remaining > 0;
+    return row.remaining > 0 || row.purchased > 0 || row.consumed > 0 || row.initial > 0;
+  });
 }

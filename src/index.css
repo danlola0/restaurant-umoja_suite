@@ -26,8 +26,8 @@ body,
 
 @media print {
 	@page {
-		size: 80mm auto;
-		margin: 0;
+		size: A5 portrait;
+		margin: 6mm 7mm;
 	}
 	html,
 	body,
@@ -62,10 +62,7 @@ body,
 		margin: 0 auto !important;
 		background: #fff !important;
 		color: #000 !important;
-	}
-	.umoja-qr {
-		width: 28mm !important;
-		height: 28mm !important;
-		image-rendering: crisp-edges !important;
+		padding: 0 !important;
+		max-width: 134mm !important;
 	}
 }

@@ -1,7 +1,7 @@
-import React, { useState } from 'react';
+import React, { useMemo, useState } from 'react';
 import { useRestaurant } from '../../context/RestaurantContext';
-import { RestaurantTable, Invoice, TableSession } from '../../types';
-import { formatFC, formatDateTime, formatTimeOnly } from '../../utils/formatters';
+import { RestaurantTable, Invoice } from '../../types';
+import { formatFC, formatDateTime, formatTimeOnly, isLocalCalendarDay, localCalendarDate } from '../../utils/formatters';
 import { InvoiceModal } from './InvoiceModal';
 import { PaymentModal } from './PaymentModal';
 import { ServiceExpensePanel } from '../common/ServiceExpensePanel';
@@ -31,6 +31,7 @@ export const CashierPosView: React.FC = () => {
     orders, 
     tableSessions, 
     invoices, 
+    paymentTransactions,
     cashRegister, 
     openTableSession, 
     generateInvoiceForTable, 
@@ -122,9 +123,66 @@ export const CashierPosView: React.FC = () => {
     }
   };
 
-  const totalCollectedToday = (cashRegister.totalSalesCash || 0) + (cashRegister.totalSalesMobile || 0) + (cashRegister.totalSalesCard || 0) + (cashRegister.totalSalesBank || 0);
+  const todayKey = localCalendarDate();
+  const todayPayments = useMemo(
+    () => paymentTransactions.filter(payment => isLocalCalendarDay(payment.createdAt, todayKey)),
+    [paymentTransactions, todayKey]
+  );
+  const cashToday = todayPayments.filter(payment => payment.paymentMethod === 'ESPECES').reduce((sum, payment) => sum + payment.amount, 0);
+  const otherToday = todayPayments.filter(payment => payment.paymentMethod !== 'ESPECES').reduce((sum, payment) => sum + payment.amount, 0);
+  const totalCollectedToday = cashToday + otherToday;
+  const paymentsByMethod = useMemo(() => {
+    const map = new Map<string, number>();
+    todayPayments.forEach(payment => {
+      map.set(payment.paymentMethod, (map.get(payment.paymentMethod) || 0) + payment.amount);
+    });
+    return Array.from(map.entries());
+  }, [todayPayments]);
+  const sessionOpenedToday = isLocalCalendarDay(cashRegister.openedAt, todayKey);
+  const openingToday = cashRegister.status === 'OPEN' && sessionOpenedToday ? cashRegister.openingBalance : 0;
+  const cashDrawerBalance = openingToday + cashToday;
   const occupiedTablesCount = tables.filter(t => t.status !== 'LIBRE').length;
-  const pendingInvoicesCount = invoices.filter(i => i.status === 'EN_ATTENTE').length;
+  const pendingInvoices = invoices.filter(invoice => invoice.status === 'EN_ATTENTE');
+  const pendingInvoicesCount = pendingInvoices.length;
+  const todaySalesLines = useMemo(() => {
+    const paidTodayIds = new Set(todayPayments.map(payment => payment.invoiceId));
+    return invoices
+      .filter(invoice => paidTodayIds.has(invoice.id) || (invoice.status === 'PAYEE' && isLocalCalendarDay(invoice.paidAt || invoice.createdAt, todayKey)))
+      .flatMap(invoice => {
+        const latestPayment = todayPayments.find(payment => payment.invoiceId === invoice.id);
+        const items = invoiceLineItems(invoice, orders);
+        const at = latestPayment?.createdAt || invoice.paidAt || invoice.createdAt;
+        const method = latestPayment?.paymentMethod || invoice.paymentMethod;
+        const table = invoice.tableCode || invoiceGuestLabel(invoice, orders);
+        if (!items.length) {
+          return [{
+            key: `${invoice.id}-total`,
+            invoiceNumber: invoice.invoiceNumber,
+            productName: '—',
+            quantity: 1,
+            unitPrice: invoice.totalAmount,
+            subtotal: latestPayment?.amount ?? invoice.paidAmount,
+            table,
+            paymentMethod: method,
+            at,
+            status: invoice.status,
+          }];
+        }
+        return items.map((item, index) => ({
+          key: `${invoice.id}-${index}`,
+          invoiceNumber: invoice.invoiceNumber,
+          productName: item.productName,
+          quantity: item.quantity,
+          unitPrice: item.unitPrice,
+          subtotal: item.subtotal,
+          table,
+          paymentMethod: method,
+          at,
+          status: invoice.status,
+        }));
+      })
+      .sort((a, b) => new Date(b.at).getTime() - new Date(a.at).getTime());
+  }, [invoices, orders, todayPayments, todayKey]);
   const historyInvoices = [...invoices]
     .sort((a, b) => new Date(b.paidAt || b.createdAt).getTime() - new Date(a.paidAt || a.createdAt).getTime())
     .filter(inv => {
@@ -155,7 +213,19 @@ export const CashierPosView: React.FC = () => {
           <div className="text-xl font-black font-mono text-emerald-400 mt-2">
             {formatFC(totalCollectedToday)}
           </div>
-          <div className="text-[11px] text-stone-500 mt-1">Caisse du jour active</div>
+          <div className="text-[11px] text-stone-500 mt-1">
+            {todayPayments.length} paiement{todayPayments.length > 1 ? 's' : ''} · jour {todayKey}
+          </div>
+          <div className="mt-2 space-y-0.5 text-[11px] text-stone-400">
+            <div className="flex justify-between"><span>Espèces</span><span className="font-mono text-emerald-300">{formatFC(cashToday)}</span></div>
+            {otherToday > 0 && <div className="flex justify-between"><span>Autres moyens</span><span className="font-mono text-sky-300">{formatFC(otherToday)}</span></div>}
+            {paymentsByMethod.map(([method, amount]) => (
+              <div key={method} className="flex justify-between text-stone-500">
+                <span>{paymentMethodLabel(method as Invoice['paymentMethod'])}</span>
+                <span className="font-mono">{formatFC(amount)}</span>
+              </div>
+            ))}
+          </div>
         </div>
 
         <div className="bg-stone-900 border border-stone-800 rounded-2xl p-4 shadow-lg">
@@ -181,7 +251,17 @@ export const CashierPosView: React.FC = () => {
           <div className="text-xl font-black font-mono text-rose-400 mt-2">
             {pendingInvoicesCount}
           </div>
-          <div className="text-[11px] text-stone-500 mt-1">Addition demandée</div>
+          <div className="text-[11px] text-stone-500 mt-1">Non payées · hors historique payé</div>
+          {pendingInvoices.slice(0, 3).map(invoice => (
+            <button
+              key={invoice.id}
+              type="button"
+              onClick={() => setViewInvoice(invoice)}
+              className="mt-1 block w-full truncate text-left text-[11px] text-rose-200/80 hover:text-rose-100"
+            >
+              {invoice.invoiceNumber} · {formatFC(invoice.remainingAmount || invoice.totalAmount)}
+            </button>
+          ))}
         </div>
 
         <div className="bg-stone-900 border border-stone-800 rounded-2xl p-4 shadow-lg">
@@ -192,11 +272,68 @@ export const CashierPosView: React.FC = () => {
             </div>
           </div>
           <div className="text-xl font-black font-mono text-sky-400 mt-2">
-            {formatFC(cashRegister.theoreticalBalance)}
+            {formatFC(cashDrawerBalance)}
           </div>
-          <div className="text-[11px] text-stone-500 mt-1">Fond + Encaissements</div>
+          <div className="text-[11px] text-stone-500 mt-1">
+            Fond du jour {formatFC(openingToday)} + espèces {formatFC(cashToday)}
+          </div>
         </div>
 
+      </div>
+
+      <div className="bg-stone-900 border border-stone-800 rounded-2xl p-5 shadow-xl space-y-3">
+        <div className="flex items-center justify-between gap-3">
+          <div>
+            <h3 className="font-bold text-sm text-stone-100">Ventes du jour</h3>
+            <p className="text-[11px] text-stone-400">Paiements enregistrés aujourd’hui ({todayKey}) — historique des jours précédents conservé</p>
+          </div>
+          <span className="text-xs font-mono text-stone-500">{todaySalesLines.length} ligne{todaySalesLines.length > 1 ? 's' : ''}</span>
+        </div>
+        <div className="overflow-x-auto">
+          <table className="w-full text-xs text-left text-stone-300">
+            <thead className="bg-stone-950 text-stone-400 uppercase text-[10px] font-mono">
+              <tr>
+                <th className="py-2 px-3">Date & heure</th>
+                <th className="py-2 px-3">N° facture</th>
+                <th className="py-2 px-3">Plat / article</th>
+                <th className="py-2 px-3 text-right">Qté</th>
+                <th className="py-2 px-3 text-right">P.U.</th>
+                <th className="py-2 px-3 text-right">Total</th>
+                <th className="py-2 px-3">Table</th>
+                <th className="py-2 px-3">Paiement</th>
+                <th className="py-2 px-3">Statut</th>
+              </tr>
+            </thead>
+            <tbody className="divide-y divide-stone-800/80">
+              {todaySalesLines.map(line => (
+                <tr key={line.key} className="hover:bg-stone-800/40">
+                  <td className="py-2 px-3 text-stone-400 whitespace-nowrap">{formatDateTime(line.at)}</td>
+                  <td className="py-2 px-3 font-mono font-bold text-amber-400">{line.invoiceNumber}</td>
+                  <td className="py-2 px-3 text-stone-100">{line.productName}</td>
+                  <td className="py-2 px-3 text-right font-mono">{line.quantity}</td>
+                  <td className="py-2 px-3 text-right font-mono">{formatFC(line.unitPrice)}</td>
+                  <td className="py-2 px-3 text-right font-mono font-bold text-stone-100">{formatFC(line.subtotal)}</td>
+                  <td className="py-2 px-3">{line.table || '—'}</td>
+                  <td className="py-2 px-3">{paymentMethodLabel(line.paymentMethod)}</td>
+                  <td className="py-2 px-3">
+                    <span className={`px-2 py-0.5 rounded-full text-[10px] font-bold ${
+                      line.status === 'PAYEE'
+                        ? 'bg-emerald-950 text-emerald-300 border border-emerald-600/50'
+                        : 'bg-amber-950 text-amber-300 border border-amber-600/50'
+                    }`}>
+                      {line.status === 'PAYEE' ? 'Payée' : 'En attente'}
+                    </span>
+                  </td>
+                </tr>
+              ))}
+              {todaySalesLines.length === 0 && (
+                <tr>
+                  <td colSpan={9} className="py-6 px-3 text-center text-stone-500">Aucune vente encaissée aujourd’hui.</td>
+                </tr>
+              )}
+            </tbody>
+          </table>
+        </div>
       </div>
 
       <DailyResultStrip />

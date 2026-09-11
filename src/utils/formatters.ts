@@ -23,6 +23,23 @@ export function formatFC(amount: number): string {
   }).format(amount);
 }
 
+/** Local calendar day YYYY-MM-DD (not UTC). Used for daily cashier KPIs. */
+export function localCalendarDate(value?: Date | string): string {
+  const d = value instanceof Date ? value : value ? new Date(value) : new Date();
+  if (Number.isNaN(d.getTime())) return '';
+  const year = d.getFullYear();
+  const month = String(d.getMonth() + 1).padStart(2, '0');
+  const day = String(d.getDate()).padStart(2, '0');
+  return `${year}-${month}-${day}`;
+}
+
+export function isLocalCalendarDay(isoOrDate?: string, day = localCalendarDate()): boolean {
+  if (!isoOrDate) return false;
+  const raw = String(isoOrDate).trim();
+  if (/^\d{4}-\d{2}-\d{2}$/.test(raw)) return raw === day;
+  return localCalendarDate(raw) === day;
+}
+
 export function formatDateTime(isoString?: string): string {
   if (!isoString) return '-';
   try {
@@ -56,6 +73,15 @@ export function formatTimeOnly(isoString?: string): string {
 export function formatDateOnly(dateStr?: string): string {
   if (!dateStr) return '-';
   try {
+    const day = String(dateStr).slice(0, 10);
+    if (/^\d{4}-\d{2}-\d{2}$/.test(day) && String(dateStr).length === 10) {
+      const [year, month, dayNum] = day.split('-').map(Number);
+      return new Intl.DateTimeFormat('fr-FR', {
+        day: '2-digit',
+        month: 'short',
+        year: 'numeric',
+      }).format(new Date(year, month - 1, dayNum));
+    }
     const d = new Date(dateStr);
     return new Intl.DateTimeFormat('fr-FR', {
       day: '2-digit',
@@ -65,6 +91,14 @@ export function formatDateOnly(dateStr?: string): string {
   } catch {
     return dateStr;
   }
+}
+
+export function formatExpenseOccurred(dateStr?: string, createdAt?: string): string {
+  const day = formatDateOnly(dateStr);
+  if (!createdAt) return day;
+  const time = formatTimeOnly(createdAt);
+  if (time === '-') return day;
+  return `${day} ${time.slice(0, 5)}`;
 }
 
 export function exportToCSV(filename: string, headers: string[], rows: (string | number)[][]): void {

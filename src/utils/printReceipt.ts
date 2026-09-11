@@ -1,4 +1,4 @@
-export async function imageToThermalQrPng(src: string, outputSize = 384): Promise<string> {
+export async function imageToThermalQrPng(src: string, outputSize = 512): Promise<string> {
   const absolute = src.startsWith('http') || src.startsWith('data:')
     ? src
     : `${window.location.origin}${src.startsWith('/') ? src : `/${src}`}`;
@@ -40,7 +40,7 @@ export async function imageToThermalQrPng(src: string, outputSize = 384): Promis
     maxY = height - 1;
   }
   const side = Math.max(maxX - minX, maxY - minY);
-  const pad = Math.max(4, Math.round(side * 0.06));
+  const pad = Math.max(12, Math.round(side * 0.14));
   const cropX = Math.max(0, minX - pad);
   const cropY = Math.max(0, minY - pad);
   const cropW = Math.min(width - cropX, side + pad * 2);
@@ -53,44 +53,40 @@ export async function imageToThermalQrPng(src: string, outputSize = 384): Promis
   if (!outCtx) return absolute;
   outCtx.fillStyle = '#ffffff';
   outCtx.fillRect(0, 0, outputSize, outputSize);
+  const quiet = Math.round(outputSize * 0.12);
+  const inner = outputSize - quiet * 2;
   outCtx.imageSmoothingEnabled = false;
-  outCtx.drawImage(source, cropX, cropY, cropW, cropH, 0, 0, outputSize, outputSize);
+  outCtx.drawImage(source, cropX, cropY, cropW, cropH, quiet, quiet, inner, inner);
 
-  const pixels = outCtx.getImageData(0, 0, outputSize, outputSize);
-  const outData = pixels.data;
-  for (let i = 0; i < outData.length; i += 4) {
-    const value = 0.299 * outData[i] + 0.587 * outData[i + 1] + 0.114 * outData[i + 2] < 160 ? 0 : 255;
-    outData[i] = value;
-    outData[i + 1] = value;
-    outData[i + 2] = value;
-    outData[i + 3] = 255;
-  }
-  outCtx.putImageData(pixels, 0, 0);
   return out.toDataURL('image/png');
 }
 
 export const RECEIPT_PRINT_CSS = `
-@page { size: 80mm auto; margin: 0; }
+@page { size: A5 portrait; margin: 6mm 7mm; }
 html, body {
   margin: 0;
   padding: 0;
   background: #fff;
-  color: #000;
+  color: #111;
   -webkit-print-color-adjust: exact;
   print-color-adjust: exact;
 }
-body { width: 80mm; }
 #umoja-print-receipt {
-  width: 72mm !important;
-  max-width: 72mm !important;
-  margin: 2mm auto !important;
+  width: 100% !important;
+  max-width: 134mm !important;
+  margin: 0 auto !important;
   padding: 0 !important;
+  box-sizing: border-box;
+  font-size: 11px !important;
+  line-height: 1.25 !important;
 }
-img.umoja-qr {
-  width: 28mm !important;
-  height: 28mm !important;
-  object-fit: contain;
-  image-rendering: crisp-edges;
-  image-rendering: -webkit-optimize-contrast;
+#umoja-print-receipt h1 {
+  margin: 6px 0 4px !important;
+  font-size: 14px !important;
+}
+#umoja-print-receipt table td,
+#umoja-print-receipt table th {
+  padding-top: 2px !important;
+  padding-bottom: 2px !important;
 }
 `;

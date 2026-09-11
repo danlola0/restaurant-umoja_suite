@@ -1,32 +1,29 @@
 import React, { useState } from 'react';
 import { useRestaurant } from '../../context/RestaurantContext';
-import { formatFC, formatDateOnly, formatDateTime } from '../../utils/formatters';
+import { formatFC, formatDateTime } from '../../utils/formatters';
 import { RecipeProfitability } from './RecipeProfitability';
 import { ExpenseManager } from './ExpenseManager';
+import { DishSalesReport } from './DishSalesReport';
 import { isPurchaseCategory } from '../../utils/expenseCatalog';
 import { 
   FileSpreadsheet, 
   Download, 
-  Printer, 
   Calendar, 
   DollarSign, 
   TrendingUp, 
   Users, 
   Utensils, 
   Layers, 
-  CheckCircle2, 
   FileText 
 } from 'lucide-react';
 
 export const ReportsManager: React.FC = () => {
   const { 
-    orders, 
     invoices, 
     expenses, 
     employees, 
     attendanceRecords, 
     cashRegister, 
-    products,
     currentUser
   } = useRestaurant();
 
@@ -252,31 +249,7 @@ export const ReportsManager: React.FC = () => {
       )}
 
       {/* Report 2: Sales */}
-      {activeReportTab === 'VENTES' && (
-        <div className="bg-stone-900 border border-stone-800 rounded-2xl p-5 shadow space-y-4">
-          <h3 className="text-sm font-bold text-stone-100">Performance des Ventes par Produit</h3>
-          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3">
-            {products.map(p => (
-              <div key={p.id} className="bg-stone-950/70 border border-stone-800 rounded-xl p-3.5 flex items-center justify-between">
-                <div className="flex items-center gap-3">
-                  <img src={p.photo} alt={p.name} className="w-10 h-10 rounded-lg object-cover" />
-                  <div>
-                    <div className="font-bold text-xs text-stone-200">{p.name}</div>
-                    <div className="text-[10px] text-stone-500">Prix : {formatFC(p.price)}</div>
-                  </div>
-                </div>
-                <div className="text-right">
-                  <span className={`px-2 py-0.5 rounded text-[10px] font-bold ${
-                    p.available ? 'bg-emerald-950 text-emerald-300' : 'bg-rose-950 text-rose-300'
-                  }`}>
-                    {p.available ? 'En vente' : 'Rupture'}
-                  </span>
-                </div>
-              </div>
-            ))}
-          </div>
-        </div>
-      )}
+      {activeReportTab === 'VENTES' && <DishSalesReport />}
 
       {/* Report 3: RH */}
       {activeReportTab === 'RH' && (

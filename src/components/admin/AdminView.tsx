@@ -7,9 +7,8 @@ import {
   Clock, 
   TrendingDown, 
   CreditCard, 
-  FileSpreadsheet, 
-  ShieldCheck,
-  Package
+  Package,
+  ChefHat
 } from 'lucide-react';
 import { AdminDashboard } from './AdminDashboard';
 import { MenuManager } from './MenuManager';
@@ -19,8 +18,7 @@ import { AttendanceManager } from './AttendanceManager';
 import { ExpenseManager } from './ExpenseManager';
 import { StockManager } from './StockManager';
 import { CashRegisterManager } from './CashRegisterManager';
-import { ReportsManager } from './ReportsManager';
-import { AuditLogViewer } from './AuditLogViewer';
+import { DishSalesReport } from './DishSalesReport';
 
 export type AdminTab = 
   | 'DASHBOARD'
@@ -29,10 +27,9 @@ export type AdminTab =
   | 'STAFF'
   | 'ATTENDANCE'
   | 'EXPENSES'
+  | 'RECETTES'
   | 'STOCKS'
-  | 'CASH_REGISTER'
-  | 'REPORTS'
-  | 'AUDIT';
+  | 'CASH_REGISTER';
 
 export const AdminView: React.FC = () => {
   const [activeTab, setActiveTab] = useState<AdminTab>('DASHBOARD');
@@ -44,16 +41,14 @@ export const AdminView: React.FC = () => {
     { id: 'STAFF', label: 'Personnel RH', icon: Users },
     { id: 'ATTENDANCE', label: 'Pointages', icon: Clock },
     { id: 'EXPENSES', label: 'Dépenses & Achats', icon: TrendingDown },
+    { id: 'RECETTES', label: 'Recettes', icon: ChefHat },
     { id: 'STOCKS', label: 'Stocks', icon: Package },
     { id: 'CASH_REGISTER', label: 'Caisse & Clôture', icon: CreditCard },
-    { id: 'REPORTS', label: 'Rapports & Exports', icon: FileSpreadsheet },
-    { id: 'AUDIT', label: 'Journal d\'Audit', icon: ShieldCheck },
   ];
 
   return (
     <div className="min-h-[calc(100vh-4rem)] bg-stone-950 text-stone-100 p-4 sm:p-6 lg:p-8 space-y-6">
       
-      {/* Sub-Navigation Bar */}
       <div className="bg-stone-900 border border-stone-800 rounded-2xl p-2 shadow-xl overflow-x-auto overscroll-x-contain">
         <div className="flex w-max items-center gap-1.5">
           {navigationItems.map(item => {
@@ -77,7 +72,6 @@ export const AdminView: React.FC = () => {
         </div>
       </div>
 
-      {/* Active Tab View Content */}
       <div className="animate-in fade-in duration-200">
         {activeTab === 'DASHBOARD' && <AdminDashboard />}
         {activeTab === 'MENU' && <MenuManager />}
@@ -85,10 +79,9 @@ export const AdminView: React.FC = () => {
         {activeTab === 'STAFF' && <StaffManager />}
         {activeTab === 'ATTENDANCE' && <AttendanceManager />}
         {activeTab === 'EXPENSES' && <ExpenseManager />}
+        {activeTab === 'RECETTES' && <DishSalesReport />}
         {activeTab === 'STOCKS' && <StockManager />}
         {activeTab === 'CASH_REGISTER' && <CashRegisterManager />}
-        {activeTab === 'REPORTS' && <ReportsManager />}
-        {activeTab === 'AUDIT' && <AuditLogViewer />}
       </div>
 
     </div>

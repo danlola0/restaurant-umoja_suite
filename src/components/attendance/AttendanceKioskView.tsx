@@ -137,7 +137,7 @@ export const AttendanceKioskView: React.FC<AttendanceKioskViewProps> = ({ onNavi
         </div>
       </section>
       {(currentRole === 'SERVEUR' || currentRole === 'EMPLOYE') && (
-        <div className="mx-auto mt-6 max-w-xl">
+        <div className="mx-auto mt-6 max-w-4xl">
           <ServedOrdersPanel />
         </div>
       )}

@@ -1,15 +1,13 @@
 import React from 'react';
 import { Invoice, RestaurantInfo } from '../../types';
 import { formatDateTime } from '../../utils/formatters';
-import { WECHAT_PAY_QR_SRC, ALIPAY_PAY_QR_SRC, paymentMethodLabel } from '../../lib/cashierOrders';
+import { paymentMethodLabel } from '../../lib/cashierOrders';
 
 interface KinMarcheReceiptProps {
   invoice: Invoice;
   restaurantInfo: RestaurantInfo;
   items: Invoice['items'];
   guestLabel: string;
-  wechatQrSrc?: string;
-  alipayQrSrc?: string;
 }
 
 const yen = (amount: number) => `¥${Math.round(Number(amount) || 0)}`;
@@ -19,121 +17,117 @@ export const KinMarcheReceipt: React.FC<KinMarcheReceiptProps> = ({
   restaurantInfo,
   items,
   guestLabel,
-  wechatQrSrc = WECHAT_PAY_QR_SRC,
-  alipayQrSrc = ALIPAY_PAY_QR_SRC,
 }) => {
   const isPaid = invoice.status === 'PAYEE';
-  const cell: React.CSSProperties = { padding: '1px 0', verticalAlign: 'top' };
+  const initials = (restaurantInfo.name || 'UMOJA').split(' ').filter(Boolean).slice(0, 2).map(word => word[0]).join('').toUpperCase();
 
   return (
     <article
       id="umoja-print-receipt"
       className="kin-marche-receipt"
       style={{
-        width: '72mm',
-        maxWidth: '72mm',
+        width: '100%',
+        maxWidth: '148mm',
         margin: '0 auto',
         background: '#fff',
-        color: '#000',
+        color: '#111',
         fontFamily: 'Arial, "Microsoft YaHei", "PingFang SC", sans-serif',
-        fontSize: '13px',
-        lineHeight: 1.25,
-        padding: '4px 2px 8px',
+        fontSize: '12px',
+        lineHeight: 1.35,
+        padding: '6mm',
         boxSizing: 'border-box',
       }}
     >
-      <header style={{ textAlign: 'center' }}>
-        <div style={{ fontWeight: 800, fontSize: '15px' }}>
-          {restaurantInfo.name || 'UMOJA MALEWA RESTAURANT'}
+      <header style={{ display: 'flex', gap: '10px', alignItems: 'center', borderBottom: '2px solid #111', paddingBottom: '8px' }}>
+        <div style={{ width: '42px', height: '42px', border: '2px solid #111', borderRadius: '8px', display: 'flex', alignItems: 'center', justifyContent: 'center', fontWeight: 800, fontSize: '16px', flexShrink: 0 }}>
+          {initials || 'U'}
         </div>
-        <div style={{ fontSize: '12px' }}>TEL: {restaurantInfo.phone || '17701958709'}</div>
-        <div style={{ fontSize: '11px' }}>广州市越秀区下塘西路87号101房</div>
-        <div style={{ fontSize: '11px' }}>Rm 101, No.87 Xiatangxi Rd, Yuexiu</div>
-        <div style={{ margin: '6px 0 4px', fontWeight: 800 }}>** SALES RECEIPT **</div>
+        <div>
+          <div style={{ fontWeight: 800, fontSize: '16px' }}>{restaurantInfo.name || 'UMOJA MALEWA RESTAURANT'}</div>
+          {restaurantInfo.slogan ? <div style={{ fontSize: '11px' }}>{restaurantInfo.slogan}</div> : null}
+          <div style={{ fontSize: '11px' }}>{restaurantInfo.address || '广州市越秀区下塘西路87号101房'}</div>
+          <div style={{ fontSize: '11px' }}>TEL: {restaurantInfo.phone || '17701958709'}</div>
+        </div>
       </header>
 
-      <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '12px' }}>
+      <h1 style={{ textAlign: 'center', fontSize: '15px', margin: '10px 0 8px' }}>FACTURE / 发票</h1>
+
+      <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '11px' }}>
         <tbody>
-          <tr><td style={cell}>No.</td><td style={{ ...cell, textAlign: 'right' }}>{invoice.invoiceNumber}</td></tr>
-          <tr><td style={cell}>Date</td><td style={{ ...cell, textAlign: 'right' }}>{formatDateTime(invoice.paidAt || invoice.createdAt)}</td></tr>
-          <tr><td style={cell}>Table</td><td style={{ ...cell, textAlign: 'right' }}>{guestLabel}</td></tr>
-          <tr><td style={cell}>Cashier</td><td style={{ ...cell, textAlign: 'right' }}>{invoice.cashierName || 'UMOJA'}</td></tr>
+          <tr>
+            <td style={{ padding: '2px 0' }}>N° facture</td>
+            <td style={{ padding: '2px 0', textAlign: 'right', fontWeight: 700 }}>{invoice.invoiceNumber}</td>
+          </tr>
+          <tr>
+            <td style={{ padding: '2px 0' }}>Date et heure</td>
+            <td style={{ padding: '2px 0', textAlign: 'right' }}>{formatDateTime(invoice.paidAt || invoice.createdAt)}</td>
+          </tr>
+          <tr>
+            <td style={{ padding: '2px 0' }}>Table</td>
+            <td style={{ padding: '2px 0', textAlign: 'right' }}>{invoice.tableCode || guestLabel}</td>
+          </tr>
+          <tr>
+            <td style={{ padding: '2px 0' }}>Client</td>
+            <td style={{ padding: '2px 0', textAlign: 'right' }}>{guestLabel || '—'}</td>
+          </tr>
+          <tr>
+            <td style={{ padding: '2px 0' }}>Caissier</td>
+            <td style={{ padding: '2px 0', textAlign: 'right' }}>{invoice.cashierName || 'UMOJA'}</td>
+          </tr>
         </tbody>
       </table>
 
-      <div style={{ borderTop: '1px solid #000', margin: '6px 0 4px' }} />
-
-      <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '12px' }}>
+      <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '11px', marginTop: '10px' }}>
         <thead>
           <tr>
-            <th style={{ ...cell, textAlign: 'left', fontWeight: 800 }}>ITEM</th>
-            <th style={{ ...cell, width: '28px', textAlign: 'right', fontWeight: 800 }}>QTY</th>
-            <th style={{ ...cell, width: '52px', textAlign: 'right', fontWeight: 800 }}>AMT</th>
+            <th style={{ borderBottom: '1px solid #111', textAlign: 'left', padding: '4px 2px' }}>Désignation</th>
+            <th style={{ borderBottom: '1px solid #111', textAlign: 'right', padding: '4px 2px', width: '36px' }}>Qté</th>
+            <th style={{ borderBottom: '1px solid #111', textAlign: 'right', padding: '4px 2px', width: '58px' }}>P.U.</th>
+            <th style={{ borderBottom: '1px solid #111', textAlign: 'right', padding: '4px 2px', width: '62px' }}>Sous-total</th>
           </tr>
         </thead>
         <tbody>
           {items.map((item, index) => (
             <tr key={`${item.productName}-${index}`}>
-              <td style={{ ...cell, paddingTop: '4px', textTransform: 'uppercase' }}>{item.productName}</td>
-              <td style={{ ...cell, paddingTop: '4px', textAlign: 'right' }}>{item.quantity}</td>
-              <td style={{ ...cell, paddingTop: '4px', textAlign: 'right' }}>{yen(item.subtotal)}</td>
+              <td style={{ padding: '5px 2px', textTransform: 'uppercase' }}>{item.productName}</td>
+              <td style={{ padding: '5px 2px', textAlign: 'right' }}>{item.quantity}</td>
+              <td style={{ padding: '5px 2px', textAlign: 'right' }}>{yen(item.unitPrice)}</td>
+              <td style={{ padding: '5px 2px', textAlign: 'right' }}>{yen(item.subtotal)}</td>
             </tr>
           ))}
         </tbody>
       </table>
 
-      <div style={{ borderTop: '1px solid #000', margin: '6px 0 4px' }} />
-
-      <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '13px' }}>
+      <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '12px', marginTop: '8px', borderTop: '1px solid #111' }}>
         <tbody>
           {invoice.discountAmount > 0 && (
             <tr>
-              <td style={cell}>DISCOUNT</td>
-              <td style={{ ...cell, textAlign: 'right' }}>-{yen(invoice.discountAmount)}</td>
+              <td style={{ padding: '4px 2px' }}>Remise</td>
+              <td style={{ padding: '4px 2px', textAlign: 'right' }}>-{yen(invoice.discountAmount)}</td>
             </tr>
           )}
           <tr>
-            <td style={{ ...cell, fontWeight: 800, fontSize: '15px' }}>TOTAL</td>
-            <td style={{ ...cell, textAlign: 'right', fontWeight: 800, fontSize: '15px' }}>{yen(invoice.totalAmount)}</td>
+            <td style={{ padding: '6px 2px', fontWeight: 800, fontSize: '14px' }}>TOTAL</td>
+            <td style={{ padding: '6px 2px', textAlign: 'right', fontWeight: 800, fontSize: '14px' }}>{yen(invoice.totalAmount)}</td>
           </tr>
           <tr>
-            <td style={cell}>PAY</td>
-            <td style={{ ...cell, textAlign: 'right' }}>{paymentMethodLabel(invoice.paymentMethod)}</td>
+            <td style={{ padding: '3px 2px' }}>Mode de paiement</td>
+            <td style={{ padding: '3px 2px', textAlign: 'right' }}>{paymentMethodLabel(invoice.paymentMethod)}</td>
+          </tr>
+          <tr>
+            <td style={{ padding: '3px 2px' }}>Statut du paiement</td>
+            <td style={{ padding: '3px 2px', textAlign: 'right', fontWeight: 800 }}>{isPaid ? 'PAYÉE / PAID' : 'NON PAYÉE / UNPAID'}</td>
           </tr>
           {invoice.paymentReference ? (
             <tr>
-              <td style={cell}>REF</td>
-              <td style={{ ...cell, textAlign: 'right' }}>{invoice.paymentReference}</td>
+              <td style={{ padding: '3px 2px' }}>Référence</td>
+              <td style={{ padding: '3px 2px', textAlign: 'right' }}>{invoice.paymentReference}</td>
             </tr>
           ) : null}
         </tbody>
       </table>
 
-      <div style={{ textAlign: 'center', fontWeight: 800, margin: '8px 0 6px' }}>
-        {isPaid ? '*** PAID ***' : '*** UNPAID ***'}
-      </div>
-
-      <div style={{ borderTop: '1px solid #000', marginBottom: '6px' }} />
-
-      <section style={{ textAlign: 'center' }}>
-        <div style={{ fontWeight: 800, fontSize: '12px' }}>SCAN TO PAY  扫码付款</div>
-        <table style={{ width: '100%', marginTop: '6px', borderCollapse: 'collapse' }}>
-          <tbody>
-            <tr>
-              <td style={{ width: '50%', textAlign: 'center', verticalAlign: 'top' }}>
-                <img className="umoja-qr" src={wechatQrSrc} alt="WeChat" style={{ width: '28mm', height: '28mm', objectFit: 'contain', display: 'block', margin: '0 auto' }} />
-                <div style={{ fontSize: '11px', fontWeight: 800, marginTop: '3px' }}>WeChat</div>
-              </td>
-              <td style={{ width: '50%', textAlign: 'center', verticalAlign: 'top' }}>
-                <img className="umoja-qr" src={alipayQrSrc} alt="Alipay" style={{ width: '28mm', height: '28mm', objectFit: 'contain', display: 'block', margin: '0 auto' }} />
-                <div style={{ fontSize: '11px', fontWeight: 800, marginTop: '3px' }}>Alipay</div>
-              </td>
-            </tr>
-          </tbody>
-        </table>
-        <div style={{ marginTop: '8px', fontSize: '12px' }}>Thank you  谢谢光临</div>
-        <div style={{ fontSize: '11px' }}>Please keep this receipt</div>
-      </section>
+      <p style={{ textAlign: 'center', marginTop: '10px', fontSize: '12px', fontWeight: 700 }}>Thank you  谢谢光临</p>
     </article>
   );
 };
