@@ -335,7 +335,16 @@ export const ExpenseManager: React.FC = () => {
                   <td className="py-3 px-4 font-mono font-black text-rose-400">{formatFC(exp.amount)}</td>
                   <td className="py-3 px-4 text-right">
                     <button onClick={() => openEdit(exp)} className="mr-1.5 p-1.5 rounded-lg bg-stone-800 text-stone-300" title="Modifier"><Edit3 className="w-3.5 h-3.5" /></button>
-                    <button onClick={() => { if (window.confirm('Supprimer cette dépense ?')) deleteExpense(exp.id); }} className="p-1.5 rounded-lg bg-stone-800 text-stone-400 hover:text-rose-400" title="Supprimer"><Trash2 className="w-3.5 h-3.5" /></button>
+                    <button
+                      onClick={async () => {
+                        if (!window.confirm('Supprimer cette dépense ? Elle sera effacée de la base de données.')) return;
+                        await deleteExpense(exp.id);
+                      }}
+                      className="p-1.5 rounded-lg bg-stone-800 text-stone-400 hover:text-rose-400"
+                      title="Supprimer"
+                    >
+                      <Trash2 className="w-3.5 h-3.5" />
+                    </button>
                   </td>
                 </tr>
               ))}

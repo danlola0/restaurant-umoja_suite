@@ -149,7 +149,7 @@ interface RestaurantContextType {
   // Expenses
   recordExpense: (data: Omit<Expense, 'id' | 'createdAt'> & { createdAt?: string }) => Promise<boolean>;
   updateExpense: (id: string, updates: Partial<Expense>) => Promise<boolean>;
-  deleteExpense: (id: string) => void;
+  deleteExpense: (id: string) => Promise<boolean>;
   addExpenseCategory: (name: string, iconName?: string) => Promise<boolean>;
 
   // Cash Register
@@ -234,6 +234,24 @@ const expenseFromSupabase = (row: any): Expense => ({
 
 const expenseQuantityOrNull = (quantity?: number) =>
   typeof quantity === 'number' && quantity > 0 ? quantity : null;
+
+const persistExpenseUpdate = async (id: string, payload: Record<string, unknown>) => {
+  const current = { ...payload };
+  for (let attempt = 0; attempt < 6; attempt += 1) {
+    const { data, error } = await supabase.from('expenses').update(current).eq('id', id).select('id');
+    if (!error) {
+      if (!data?.length) return { ok: false, message: 'Aucune ligne modifiée dans Supabase (droits ou identifiant).' };
+      return { ok: true };
+    }
+    if (/unit/i.test(error.message)) delete current.unit;
+    else if (/created_at/i.test(error.message)) delete current.created_at;
+    else if (/item_name/i.test(error.message)) delete current.item_name;
+    else if (/quantity/i.test(error.message)) delete current.quantity;
+    else if (/expense_date/i.test(error.message)) delete current.expense_date;
+    else return { ok: false, message: error.message };
+  }
+  return { ok: false, message: 'Mise à jour impossible dans Supabase.' };
+};
 
 const fetchAllExpenseRows = async (service?: 'CUISINE' | 'CAISSE' | 'ADMINISTRATION') => {
   const pageSize = 1000;
@@ -2383,48 +2401,44 @@ export const RestaurantProvider: React.FC<{ children: React.ReactNode }> = ({ ch
     const existing = expenses.find(expense => expense.id === id);
     if (!existing) return false;
     const updated = { ...existing, ...updates };
-    const baseUpdate = { category: updated.category, item_name: updated.itemName || null, quantity: expenseQuantityOrNull(updated.quantity), unit: updated.unit || null, description: updated.description, amount: updated.amount, payment_method: updated.paymentMethod, supplier: updated.supplier || null, reference: updated.reference || updated.unit || null, expense_date: updated.date, created_at: updated.createdAt };
-    const { error } = await supabase.from('expenses').update(baseUpdate).eq('id', id);
-    if (error && /unit/i.test(error.message)) {
-      const { created_at, unit, ...withoutUnit } = baseUpdate;
-      const retry = await supabase.from('expenses').update({ ...withoutUnit, created_at }).eq('id', id);
-      if (retry.error && /created_at/i.test(retry.error.message)) {
-        const retryDate = await supabase.from('expenses').update(withoutUnit).eq('id', id);
-        if (retryDate.error) {
-          addNotification(`Dépense non modifiée dans Supabase : ${retryDate.error.message}`, 'error');
-          return false;
-        }
-      } else if (retry.error) {
-        addNotification(`Dépense non modifiée dans Supabase : ${retry.error.message}`, 'error');
-        return false;
-      }
-    } else if (error && /created_at/i.test(error.message)) {
-      const { created_at: _ignored, ...withoutCreatedAt } = baseUpdate;
-      const retry = await supabase.from('expenses').update(withoutCreatedAt).eq('id', id);
-      if (retry.error) {
-        addNotification(`Dépense non modifiée dans Supabase : ${retry.error.message}`, 'error');
-        return false;
-      }
-    } else if (error) {
-      addNotification(`Dépense non modifiée dans Supabase : ${error.message}`, 'error');
+    const result = await persistExpenseUpdate(id, {
+      category: updated.category,
+      item_name: updated.itemName || null,
+      quantity: expenseQuantityOrNull(updated.quantity),
+      unit: updated.unit || null,
+      description: updated.description,
+      amount: updated.amount,
+      payment_method: updated.paymentMethod,
+      supplier: updated.supplier || null,
+      reference: updated.reference || updated.unit || null,
+      expense_date: updated.date,
+      created_at: updated.createdAt,
+      service: updated.service,
+    });
+    if (!result.ok) {
+      addNotification(`Dépense non modifiée dans Supabase : ${result.message}`, 'error');
       return false;
     }
     setExpenses(prev => prev.map(expense => expense.id === id ? updated : expense));
     logAudit('MODIFICATION_DEPENSE', 'Expense', id, JSON.stringify(existing), JSON.stringify(updated), `Modification dépense ${updated.description}`);
-    addNotification('Dépense mise à jour.', 'info');
+    addNotification('Dépense mise à jour dans la base.', 'info');
     return true;
   }, [expenses, logAudit, addNotification]);
 
-  const deleteExpense = useCallback((id: string) => {
-    void supabase.from('expenses').delete().eq('id', id).then(({ error }) => {
-      if (error) {
-        addNotification(`Dépense non supprimée de Supabase : ${error.message}`, 'error');
-        return;
-      }
-      setExpenses(prev => prev.filter(expense => expense.id !== id));
-      logAudit('SUPPRESSION_DEPENSE', 'Expense', id, undefined, undefined, 'Dépense supprimée');
-      addNotification('Dépense supprimée.', 'warning');
-    });
+  const deleteExpense = useCallback(async (id: string): Promise<boolean> => {
+    const { data, error } = await supabase.from('expenses').delete().eq('id', id).select('id');
+    if (error) {
+      addNotification(`Dépense non supprimée de Supabase : ${error.message}`, 'error');
+      return false;
+    }
+    if (!data?.length) {
+      addNotification('Suppression refusée par Supabase. Exécutez supabase/expenses-persist.sql dans l’éditeur SQL.', 'error');
+      return false;
+    }
+    setExpenses(prev => prev.filter(expense => expense.id !== id));
+    logAudit('SUPPRESSION_DEPENSE', 'Expense', id, undefined, undefined, 'Dépense supprimée');
+    addNotification('Dépense supprimée de la base.', 'warning');
+    return true;
   }, [logAudit, addNotification]);
 
   const addExpenseCategory = useCallback(async (name: string, iconName = 'Tag'): Promise<boolean> => {

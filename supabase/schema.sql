@@ -462,6 +462,7 @@ drop policy if exists work_rules_admin_all on public.work_rules;
 drop policy if exists work_rules_staff_read on public.work_rules;
 drop policy if exists expenses_manager_read on public.expenses;
 drop policy if exists expenses_manager_write on public.expenses;
+drop policy if exists expenses_manager_delete on public.expenses;
 drop policy if exists expenses_service_read on public.expenses;
 drop policy if exists expenses_service_insert on public.expenses;
 drop policy if exists expense_categories_manager_read on public.expense_categories;
@@ -545,6 +546,7 @@ create policy expenses_service_insert on public.expenses for insert with check (
   )
 );
 create policy expenses_manager_write on public.expenses for update using (public.has_role(array['ADMINISTRATEUR', 'RESPONSABLE'])) with check (public.has_role(array['ADMINISTRATEUR', 'RESPONSABLE']));
+create policy expenses_manager_delete on public.expenses for delete using (public.has_role(array['ADMINISTRATEUR', 'RESPONSABLE']));
 
 create policy expense_categories_manager_read on public.expense_categories for select using (public.has_role(array['ADMINISTRATEUR', 'RESPONSABLE', 'CAISSIER', 'CUISINE']));
 create policy expense_categories_admin_write on public.expense_categories for all using (public.has_role(array['ADMINISTRATEUR', 'RESPONSABLE'])) with check (public.has_role(array['ADMINISTRATEUR', 'RESPONSABLE']));
